@@ -565,78 +565,6 @@ int callback_n_netopeer_n_response_time(void** UNUSED(data), XMLDIFF_OP op, xmlN
 	return EXIT_SUCCESS;
 }
 
-/**
- * @brief This callback will be run when node in path /n:netopeer/n:modules/n:module/n:module/n:enabled changes
- *
- * @param[in] data	Double pointer to void. Its passed to every callback. You can share data using it.
- * @param[in] op	Observed change in path. XMLDIFF_OP type.
- * @param[in] node	Modified node. if op == XMLDIFF_REM its copy of node removed.
- * @param[out] error	If callback fails, it can return libnetconf error structure with a failure description.
- *
- * @return EXIT_SUCCESS or EXIT_FAILURE
- */
-/* !DO NOT ALTER FUNCTION SIGNATURE! */
-int callback_n_netopeer_n_modules_n_module_n_enabled(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err** UNUSED(error)) {
-	xmlNodePtr tmp, node;
-	char* module_name = NULL, *module_enabled = NULL;
-	struct np_module* module = netopeer_options.modules;
-
-	node = (op & XMLDIFF_REM ? old_node : new_node);
-	if (node == NULL) {
-		return EXIT_FAILURE;
-	}
-
-	for (tmp = node->parent->children; tmp != NULL; tmp = tmp->next) {
-		if (xmlStrEqual(tmp->name, BAD_CAST "name")) {
-			module_name = get_node_content(tmp);
-			break;
-		}
-	}
-	module_enabled = get_node_content(node);
-
-	if (module_name == NULL || module_enabled == NULL) {
-		nc_verb_error("%s: missing module \"name\" or \"enabled\" node", __func__);
-		return EXIT_FAILURE;
-	}
-
-	if ((op & (XMLDIFF_REM | XMLDIFF_ADD)) && strcmp(module_enabled, "false") == 0) {
-		/* module is/was not enabled, nothing to enable/disable */
-		return EXIT_SUCCESS;
-	}
-
-	while (module) {
-		if (strcmp(module->name, module_name) == 0) {
-			break;
-		}
-		module = module->next;
-	}
-
-	if ((op & XMLDIFF_REM) || ((op & XMLDIFF_MOD) && strcmp(module_enabled, "false") == 0)) {
-		if (module == NULL) {
-			nc_verb_error("%s: internal error: module to disable not found", __func__);
-			return EXIT_FAILURE;
-		}
-
-		if (module_disable(module, 1)) {
-			return EXIT_FAILURE;
-		}
-	} else if ((op & XMLDIFF_ADD) || ((op & XMLDIFF_MOD) && strcmp(module_enabled, "true") == 0)) {
-		if (module != NULL) {
-			nc_verb_error("%s: internal error: module to enable already exists", __func__);
-			return EXIT_FAILURE;
-		}
-
-		module = calloc(1, sizeof(struct np_module));
-		module->name = strdup(module_name);
-		if (module_enable(module, 1)) {
-			free(module->name);
-			free(module);
-			return EXIT_FAILURE;
-		}
-	}
-
-	return EXIT_SUCCESS;
-}
 /*
 * Structure transapi_config_callbacks provide mapping between callback and path in configuration datastore.
 * It is used by libnetconf library to decide which callbacks will be run.
@@ -644,9 +572,9 @@ int callback_n_netopeer_n_modules_n_module_n_enabled(void** UNUSED(data), XMLDIF
 */
 struct transapi_data_callbacks netopeer_clbks = {
 #if defined(NP_SSH) && defined(NP_TLS)
-	.callbacks_count = 17,
+	.callbacks_count = 16,
 #else
-	.callbacks_count = 11,
+	.callbacks_count = 10,
 #endif
 	.data = NULL,
 	.callbacks = {
@@ -670,7 +598,6 @@ struct transapi_data_callbacks netopeer_clbks = {
 		{.path = "/n:netopeer/n:tls/n:crl-dir", .func = callback_n_netopeer_n_tls_n_crl_dir},
 		{.path = "/n:netopeer/n:tls/n:cert-maps/n:cert-to-name", .func = callback_n_netopeer_n_tls_n_cert_maps_n_cert_to_name},
 #endif
-		{.path = "/n:netopeer/n:modules/n:module/n:enabled", .func = callback_n_netopeer_n_modules_n_module_n_enabled}
 	}
 };
 
@@ -841,45 +768,15 @@ nc_reply* rpc_netopeer_reboot(xmlNodePtr input) {
 	return nc_reply_ok();
 }
 
-nc_reply* rpc_reload_module(xmlNodePtr input) {
-	xmlNodePtr module_node = get_rpc_node("module", input);
-	char* module_name;
-	struct np_module* module = netopeer_options.modules;
-
-	if (module_node) {
-		module_name = (char*)xmlNodeGetContent(module_node);
-	} else {
-		return nc_reply_error(nc_err_new(NC_ERR_MISSING_ELEM));
-	}
-
-	while (module) {
-		if (strcmp(module->name, module_name) == 0) {
-			break;
-		}
-		module = module->next;
-	}
-	free(module_name);
-
-	if (module == NULL) {
-		return nc_reply_error(nc_err_new(NC_ERR_INVALID_VALUE));
-	}
-
-	if (module_disable(module, 0) || module_enable(module, 0)) {
-		return nc_reply_error(nc_err_new(NC_ERR_OP_FAILED));
-	}
-
-	return nc_reply_ok();
-}
 /*
 * Structure transapi_rpc_callbacks provide mapping between callbacks and RPC messages.
 * It is used by libnetconf library to decide which callbacks will be run when RPC arrives.
 * DO NOT alter this structure
 */
 struct transapi_rpc_callbacks netopeer_rpc_clbks = {
-	.callbacks_count = 2,
+	.callbacks_count = 1,
 	.callbacks = {
-		{.name = "netopeer-reboot", .func = rpc_netopeer_reboot},
-		{.name = "reload-module", .func = rpc_reload_module}
+		{.name = "netopeer-reboot", .func = rpc_netopeer_reboot}
 	}
 };
 
