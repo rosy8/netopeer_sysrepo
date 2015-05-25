@@ -63,9 +63,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include <libxml/tree.h>
 #include <libnetconf_xml.h>
-#include <libnetconf_ssh.h>
 
 #include "server.h"
 

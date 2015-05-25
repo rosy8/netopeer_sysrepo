@@ -1,6 +1,9 @@
 #ifndef _CFGNETOPEER_TRANSAPI_SSH_H_
 #define _CFGNETOPEER_TRANSAPI_SSH_H_
 
+#include <libnetconf.h>
+#include <libxml/tree.h>
+
 struct np_options_ssh {
 	uint8_t server_key_change_flag;		// flag to communicate server key change
 	char* rsa_key;

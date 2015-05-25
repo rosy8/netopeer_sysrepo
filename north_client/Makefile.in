@@ -52,6 +52,7 @@ libdir =  @libdir@
 mandir = @mandir@
 sysconfdir = @sysconfdir@
 modulesdir = @MODULESDIR@
+sysrepoifcdir = ${prefix}/var/sysrepo_ifc/
 
 TOPDIR = @CONFIGURE_PWD@
 #if you edit this path, edit also configurator/config.py.in path
@@ -66,10 +67,12 @@ INSTALL_DATA_PRIVATE = @INSTALL@ -m 600
 RPMDIR = RPMBUILD
 
 SERVER = netopeer-server
-SERVER_LIBS = @SERVER_LIBS@
+SERVER_LIBS = libsrd.a @SERVER_LIBS@
 SERVER_SRCS =  src/server.c \
 	src/cfgnetopeer_transapi.c \
 	src/netconf_server_transapi.c \
+	src/sysrepo_datastore.c \
+	src/sysrepo_transapi.c \
 	@SERVER_TRANSPORT_SRCS@
 SERVER_HDRS = src/server.h \
 	src/cfgnetopeer_transapi.h \
@@ -225,6 +228,8 @@ install: $(SERVER) $(TOOLS) $(CFGS) $(MANPAGES) $(MANHTMLS)
 	for i in $(CFGS); do \
 		$(INSTALL_DATA_PRIVATE) $$i $(CFGDIR)/cfgnetopeer/; \
 	done
+	$(INSTALL) -d $(sysrepoifcdir)
+	$(INSTALL_DATA_PRIVATE) ietf-interfaces.yin $(sysrepoifcdir)
 	$(INSTALL) -d $(DESTDIR)/$(sysconfdir)/init.d/;
 	$(INSTALL_PROGRAM) -m 755 netopeer.rc $(DESTDIR)/$(sysconfdir)/init.d/
 	$(foreach man,$(MANPAGES),$(call MANINSTALL,$(man)))

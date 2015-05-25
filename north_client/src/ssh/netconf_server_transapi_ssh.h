@@ -1,6 +1,9 @@
 #ifndef _NETCONF_SERVER_TRANSAPI_SSH_H_
 #define _NETCONF_SERVER_TRANSAPI_SSH_H_
 
+#include <libnetconf.h>
+#include <libxml/tree.h>
+
 #ifndef DISABLE_CALLHOME
 
 int np_ssh_chapp_linger_check(struct ch_app* app);

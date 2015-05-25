@@ -67,6 +67,9 @@ static const char rcsid[] __attribute__((used)) ="$Id: "__FILE__": "RCSID" $";
 
 extern struct np_options netopeer_options;
 
+extern struct transapi sysrepo_transapi;
+extern struct ncds_custom_funcs sysrepo_funcs;
+
 #ifndef DISABLE_CALLHOME
 extern pthread_mutex_t callhome_lock;
 extern struct client_struct* callhome_client;
@@ -677,6 +680,9 @@ int main(int argc, char** argv) {
 	int listen_init = 1;
 	struct np_module* netopeer_module = NULL, *server_module = NULL;
 
+	struct ncds_ds* sysrepo;
+	ncds_id sysrepo_id;
+
 	/* initialize message system and set verbose and debug variables */
 	if ((aux_string = getenv(ENVIRONMENT_VERBOSE)) == NULL) {
 		netopeer_options.verbose = NC_VERB_ERROR;
@@ -788,10 +794,44 @@ restart:
 		return EXIT_FAILURE;
 	}
 
+	/* prepare the sysrepo module */
+	sysrepo = ncds_new_transapi_static(NCDS_TYPE_CUSTOM, NP_SYSREPO_IFC_DIR "/ietf-interfaces.yin", &sysrepo_transapi);
+	if (sysrepo == NULL) {
+		nc_verb_error("Creating sysrepo ifc datastore failed.");
+		module_disable(server_module, 1);
+		module_disable(netopeer_module, 1);
+		return EXIT_FAILURE;
+	}
+	ncds_custom_set_data(sysrepo, NULL, &sysrepo_funcs);
+	if ((sysrepo_id = ncds_init(sysrepo)) < 0) {
+		nc_verb_error("Initiating sysrepo ifc datastore failed (error code %d).", sysrepo_id);
+		ncds_free(sysrepo);
+		module_disable(server_module, 1);
+		module_disable(netopeer_module, 1);
+		return EXIT_FAILURE;
+	}
+	if (ncds_consolidate() != 0) {
+		nc_verb_error("Consolidating data models failed.");
+		ncds_free(sysrepo);
+		module_disable(server_module, 1);
+		module_disable(netopeer_module, 1);
+		return EXIT_FAILURE;
+	}
+	if (ncds_device_init(&sysrepo_id, NULL, 1) != 0) {
+		nc_verb_error("Initiating sysrepo ifc module failed.");
+		ncds_free(sysrepo);
+		module_disable(server_module, 1);
+		module_disable(netopeer_module, 1);
+		return EXIT_FAILURE;
+	}
+
 	server_start = 0;
 	nc_verb_verbose("Netopeer server successfully initialized.");
 
 	listen_loop(listen_init);
+
+	/* remove sysrepo DS */
+	ncds_free(sysrepo);
 
 	/* unload Netopeer module -> unload all modules */
 	module_disable(server_module, 1);

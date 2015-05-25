@@ -1,6 +1,8 @@
 #ifndef _CFGNETOPEER_TRANSAPI_TLS_H_
 #define _CFGNETOPEER_TRANSAPI_TLS_H_
 
+#include <libnetconf.h>
+
 typedef enum {
 	CTN_MAP_TYPE_SPECIFIED,
 	CTN_MAP_TYPE_SAN_RFC822_NAME,
