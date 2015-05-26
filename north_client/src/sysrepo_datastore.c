@@ -5,24 +5,44 @@
 #include <string.h>
 #include <syslog.h>
 
+#include <libnetconf.h>
+
 #include "srd.h"
+#include "libnetconf/edit_config.h"
 #include "config.h"
 
+#define XML_READ_OPT XML_PARSE_NOBLANKS|XML_PARSE_NSCLEAN
+
 int sysrepo_fd = -1;
+extern struct ncds_ds* sysrepo_ds;
+
+/* The last valid running for rollback */
+struct rollback_s {
+    xmlDocPtr doc;
+    NC_DATASTORE type;
+};
+static struct rollback_s rollback = { NULL, NC_DATASTORE_ERROR };
+
+static int rollbacking = 0;
+static int internal_getconfig = 0;
 
 /* local locks info */
-/*struct {
+struct {
     int running;
     char *running_sid;
     int startup;
     char *startup_sid;
     int cand;
     char *cand_sid;
-} locks = {0, NULL, 0, NULL, 0, NULL};*/
+} locks = {0, NULL, 0, NULL, 0, NULL};
 
 /* localy maintained datastores */
-/*xmlDocPtr gds_startup = NULL;
-xmlDocPtr gds_cand = NULL;*/
+xmlDocPtr gds_run = NULL;
+xmlDocPtr gds_startup = NULL;
+xmlDocPtr gds_cand = NULL;
+
+int edit_config(xmlDocPtr repo, xmlDocPtr edit, struct ncds_ds* ds, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE errop, const struct nacm_rpc* nacm, struct nc_err **error);
+int srd_isServerResponseOK(int sockfd, char** OKcontent);
 
 int sysrepo_init(void* UNUSED(data)) {
 	const char server_ip[] = "127.0.0.1";
@@ -44,14 +64,13 @@ int sysrepo_init(void* UNUSED(data)) {
 	}
 	free(ds_list);
 
+	gds_startup = xmlNewDoc(BAD_CAST "1.0");
+	gds_cand = xmlNewDoc(BAD_CAST "1.0");
+
 	return EXIT_SUCCESS;
 }
 
 void sysrepo_free(void* UNUSED(data)) {
-	/*if (srd_stopUsingOpDataStore(sysrepo_fd, NP_SYSREPO_IFC_DS) != 1) {
-		nc_verb_error("Failed to stop using %s datastore", NP_SYSREPO_IFC_DS);
-	}*/
-
     if (sysrepo_fd != -1) {
 		char msg[50];
 		sprintf(msg, "<xml><command>disconnect</command></xml>");
@@ -64,242 +83,224 @@ void sysrepo_free(void* UNUSED(data)) {
 		close(sysrepo_fd);
 		sysrepo_fd = -1;
 	}
+
+	xmlFreeDoc(gds_run);
+	xmlFreeDoc(gds_startup);
+	xmlFreeDoc(gds_cand);
 }
 
 static void store_rollback(const xmlDocPtr doc, NC_DATASTORE type) {
-	/* TODO */
-    /*if (rollback.doc) {
+    if (rollback.doc) {
         xmlFreeDoc(rollback.doc);
     }
 
     rollback.doc = doc;
-    rollback.type = type;*/
+    rollback.type = type;
 }
 
 int sysrepo_changed(void* UNUSED(data)) {
-	/* TODO */
-    /* always false the function is not needed now, we can implement it later
-     * for internal purposes, but for now the datastore content is synced
-     * continuously */
-    return (0);
+	/* always false the function is not needed now, we can implement it later
+	 * for internal purposes, but for now the datastore content is synced
+	 * continuously */
+	return 0;
 }
 
 int sysrepo_lock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
-	/* TODO not operational DS */
-	/*if (srd_lockDataStore(sysrepo_fd) != 1) {
-		nc_verb_error("Failed to lock sysrepo datastore");
+	int* locked;
+	char** sid;
+
+	switch (target) {
+	case NC_DATASTORE_RUNNING:
+		locked = &(locks.running);
+		sid = &(locks.running_sid);
+		break;
+	case NC_DATASTORE_STARTUP:
+		locked = &(locks.startup);
+		sid = &(locks.startup_sid);
+		break;
+	case NC_DATASTORE_CANDIDATE:
+		locked = &(locks.cand);
+		sid = &(locks.cand_sid);
+		break;
+	default:
+		/* handled by libnetconf */
 		return EXIT_FAILURE;
-	}*/
+	}
+
+	if (*locked) {
+		/* datastore is already locked */
+		*error = nc_err_new(NC_ERR_LOCK_DENIED);
+		nc_err_set(*error, NC_ERR_PARAM_INFO_SID, *sid);
+		return EXIT_FAILURE;
+	} else {
+		/* remember the lock */
+		*locked = 1;
+		*sid = strdup(session_id);
+		nc_verb_verbose("Sysrepo ifc datastore %d locked by %s.", target, session_id);
+	}
 
 	return EXIT_SUCCESS;
 }
 
 int sysrepo_unlock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
-	/* TODO not operational DS */
-	/*if (src_unlockDataStore(sysrepo_fd) != 1) {
-		nc_verb_error("Failed to unlock sysrepo datastore");
+	int* locked;
+	char** sid;
+
+	switch (target) {
+	case NC_DATASTORE_RUNNING:
+		locked = &(locks.running);
+		sid = &(locks.running_sid);
+		break;
+	case NC_DATASTORE_STARTUP:
+		locked = &(locks.startup);
+		sid = &(locks.startup_sid);
+		break;
+	case NC_DATASTORE_CANDIDATE:
+		locked = &(locks.cand);
+		sid = &(locks.cand_sid);
+		break;
+	default:
+		/* handled by libnetconf */
 		return EXIT_FAILURE;
-	}*/
+	}
+
+	if (*locked) {
+		if (strcmp(*sid, session_id) == 0) {
+			/* correct request, unlock */
+			*locked = 0;
+			free(*sid);
+			*sid = NULL;
+			nc_verb_verbose("Sysrepo ifc datastore %d unlocked by %s.", target, session_id);
+		} else {
+			/* locked by another session */
+			*error = nc_err_new(NC_ERR_LOCK_DENIED);
+			nc_err_set(*error, NC_ERR_PARAM_INFO_SID, *sid);
+			nc_err_set(*error, NC_ERR_PARAM_MSG, "Target datastore is locked by another session.");
+			return EXIT_FAILURE;
+		}
+	} else {
+		/* not locked */
+		*error = nc_err_new(NC_ERR_OP_FAILED);
+		nc_err_set(*error, NC_ERR_PARAM_MSG, "Target datastore is not locked.");
+		return EXIT_FAILURE;
+	}
 
 	return EXIT_SUCCESS;
 }
 
 char* sysrepo_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error) {
-    char *config_data = NULL;
+	xmlChar* config_data = NULL;
 
-    switch (target) {
-    case NC_DATASTORE_RUNNING:
-        srd_applyXPathOpDataStore(sysrepo_fd, NP_SYSREPO_IFC_DS, "/*/*[local-name()='interfaces']", &config_data);
+	switch (target) {
+	case NC_DATASTORE_RUNNING:
+		if (internal_getconfig) {
+			xmlDocDumpMemory(gds_run, &config_data, NULL);
+			internal_getconfig = 0;
+		} else {
+			srd_applyXPathOpDataStore(sysrepo_fd, NP_SYSREPO_IFC_DS, "/*/*[local-name()='interfaces']", (char**)&config_data);
+		}
 		break;
-    case NC_DATASTORE_STARTUP:
-		/* TODO */
-        /*if (!gds_startup) {
-            config_data = xmlStrdup(BAD_CAST "");
-        } else {
-            xmlDocDumpMemory(gds_startup, &config_data, NULL);
-        }
-        break;*/
-    case NC_DATASTORE_CANDIDATE:
-		/* TODO */
-        /*if (!gds_cand) {
-            config_data = xmlStrdup(BAD_CAST "");
-        } else {
-            xmlDocDumpMemory(gds_cand, &config_data, NULL);
-        }
-        break;*/
-    default:
-        nc_verb_error("Invalid <get-config> source.");
-        *error = nc_err_new(NC_ERR_BAD_ELEM);
-        nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "source");
-    }
+	case NC_DATASTORE_STARTUP:
+		if (!gds_startup) {
+			config_data = xmlStrdup(BAD_CAST "");
+		} else {
+			xmlDocDumpMemory(gds_startup, &config_data, NULL);
+		}
+		break;
+	case NC_DATASTORE_CANDIDATE:
+		if (!gds_cand) {
+			config_data = xmlStrdup(BAD_CAST "");
+		} else {
+			xmlDocDumpMemory(gds_cand, &config_data, NULL);
+		}
+		break;
+	default:
+		nc_verb_error("Invalid <get-config> source.");
+		*error = nc_err_new(NC_ERR_BAD_ELEM);
+		nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "source");
+	}
 
-    return config_data;
+	return (char*)config_data;
 }
 
 int sysrepo_deleteconfig(void *UNUSED(data), NC_DATASTORE target, struct nc_err **error) {
-	/* TODO */
-    /*switch (target) {
-    case NC_DATASTORE_RUNNING:
-        *error = nc_err_new(NC_ERR_OP_FAILED);
-        nc_err_set(*error, NC_ERR_PARAM_MSG,
-                   "Cannot delete a running datastore.");
-        return EXIT_FAILURE;
-    case NC_DATASTORE_STARTUP:
-        store_rollback(gds_startup, NC_DATASTORE_STARTUP);
-        gds_startup = NULL;
-        break;
-    case NC_DATASTORE_CANDIDATE:
-        store_rollback(gds_cand, NC_DATASTORE_CANDIDATE);
-        gds_cand = NULL;
-        break;
-    default:
-        nc_verb_error("Invalid <delete-config> target.");
-        *error = nc_err_new(NC_ERR_BAD_ELEM);
-        nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "target");
-        return EXIT_FAILURE;
-    }*/
+	switch (target) {
+	case NC_DATASTORE_RUNNING:
+		*error = nc_err_new(NC_ERR_OP_FAILED);
+		nc_err_set(*error, NC_ERR_PARAM_MSG, "Cannot delete the running datastore.");
+		return EXIT_FAILURE;
+	case NC_DATASTORE_STARTUP:
+		store_rollback(gds_startup, NC_DATASTORE_STARTUP);
+		gds_startup = NULL;
+		break;
+	case NC_DATASTORE_CANDIDATE:
+		store_rollback(gds_cand, NC_DATASTORE_CANDIDATE);
+		gds_cand = NULL;
+		break;
+	default:
+		nc_verb_error("Invalid <delete-config> target.");
+		*error = nc_err_new(NC_ERR_BAD_ELEM);
+		nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "target");
+		return EXIT_FAILURE;
+	}
 
-    return EXIT_SUCCESS;
+	return EXIT_SUCCESS;
 }
 
-int sysrepo_editconfig(void* UNUSED(data), const nc_rpc* UNUSED(rpc), NC_DATASTORE target, const char* config, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE UNUSED(errop), struct nc_err** error) {
-	/* TODO */
-//     int ret = EXIT_FAILURE, running = 0;
-//     char *aux;
-//     int cfgds_new = 0;
-//     xmlDocPtr cfgds = NULL, cfg = NULL, cfg_clone = NULL;
-//     xmlNodePtr rootcfg;
-//
-//     if (defop == NC_EDIT_DEFOP_NOTSET) {
-//         defop = NC_EDIT_DEFOP_MERGE;
-//     }
-//
-//     cfg = xmlReadMemory(config, strlen(config), NULL, NULL, XML_READ_OPT);
-//     rootcfg = xmlDocGetRootElement(cfg);
-//     if (!cfg
-//         || (rootcfg
-//             && !xmlStrEqual(rootcfg->name, BAD_CAST "capable-switch"))) {
-//         nc_verb_error("Invalid <edit-config> configuration data.");
-//         *error = nc_err_new(NC_ERR_BAD_ELEM);
-//         nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "config");
-//         return EXIT_FAILURE;
-//     }
-//
-//     switch (target) {
-//     case NC_DATASTORE_RUNNING:
-//         /* Make a copy of parsed config - we will find port/configuration in
-//          * it.  It is used after txn_commit(). */
-//         cfg_clone = xmlCopyDoc(cfg, 1);
-//
-//         aux = ofc_get_config_data();
-//         if (!aux) {
-//             *error = nc_err_new(NC_ERR_OP_FAILED);
-//             goto error_cleanup;
-//         }
-//         cfgds = xmlReadMemory(aux, strlen(aux), NULL, NULL, XML_READ_OPT);
-//         free(aux);
-//
-//         running = 1;
-//         break;
-//     case NC_DATASTORE_STARTUP:
-//         cfgds = gds_startup;
-//         break;
-//     case NC_DATASTORE_CANDIDATE:
-//         cfgds = gds_cand;
-//         break;
-//     default:
-//         nc_verb_error("Invalid <edit-config> target.");
-//         *error = nc_err_new(NC_ERR_BAD_ELEM);
-//         nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "target");
-//         goto error_cleanup;
-//     }
-//     store_rollback(xmlCopyDoc(cfgds, 1), target);
-//
-//     /* check keys in config's lists */
-//     ret = check_keys(cfg, error);
-//     if (ret != EXIT_SUCCESS) {
-//         goto error_cleanup;
-//     }
-//
-//     /* check operations */
-//     ret = check_edit_ops(NC_EDIT_OP_DELETE, defop, cfgds, cfg, error);
-//     if (ret != EXIT_SUCCESS) {
-//         goto error_cleanup;
-//     }
-//     ret = check_edit_ops(NC_EDIT_OP_CREATE, defop, cfgds, cfg, error);
-//     if (ret != EXIT_SUCCESS) {
-//         goto error_cleanup;
-//     }
-//
-//     if (target == NC_DATASTORE_RUNNING) {
-//         txn_init();
-//     }
-//
-//     ret = compact_edit_operations(cfg, defop);
-//     if (ret != EXIT_SUCCESS) {
-//         nc_verb_error("Compacting edit-config operations failed.");
-//         if (error != NULL) {
-//             *error = nc_err_new(NC_ERR_OP_FAILED);
-//         }
-//         goto error_cleanup;
-//     }
-//
-//     /* perform operations */
-//     if (!cfgds) {
-//         cfgds_new = 1;
-//         cfgds = xmlNewDoc(BAD_CAST "1.0");
-//     }
-//     ret = edit_operations(cfgds, cfg, defop, running, error);
-//     if (ret != EXIT_SUCCESS) {
-//         goto error_cleanup;
-//     }
-//
-//     /* with defaults capability */
-//     if (ncdflt_get_basic_mode() == NCWD_MODE_TRIM) {
-//         /* server work in trim basic mode and therefore all default values
-//          * must be removed from the datastore. */
-//         /* TODO */
-//     }
-//
-//     if (target == NC_DATASTORE_RUNNING) {
-//         ret = txn_commit(error);
-//
-//         if (ret == EXIT_SUCCESS) {
-//             /* modify port/configuration of ports that were created */
-//             ret = of_post_ports(xmlDocGetRootElement(cfg_clone), error);
-//         }
-//         /* config clone was used and it is not needed by now */
-//         xmlFreeDoc(cfg_clone);
-//
-//         xmlFreeDoc(cfgds);
-//     } else if (cfgds_new){
-//         if (cfgds->children) {
-//             /* document changed, because we started with empty document */
-//             if (target == NC_DATASTORE_STARTUP) {
-//                 gds_startup = cfgds;
-//                 cfgds = NULL;
-//             } else if (target == NC_DATASTORE_CANDIDATE) {
-//                 gds_cand = cfgds;
-//                 cfgds = NULL;
-//             }
-//         }
-//         xmlFreeDoc(cfgds);
-//     }
-//     xmlFreeDoc(cfg);
-//
-//     return ret;
-//
-// error_cleanup:
-//
-//     if (target == NC_DATASTORE_RUNNING) {
-//         txn_abort();
-//         xmlFreeDoc(cfg_clone);
-//         xmlFreeDoc(cfgds);
-//     }
-//     xmlFreeDoc(cfg);
-//
-//     return ret;
-	return EXIT_SUCCESS;
+int sysrepo_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE target, const char* config, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE errop, struct nc_err** error) {
+	int ret = EXIT_FAILURE;
+	char* aux;
+	xmlDocPtr cfgds = NULL, cfg = NULL;
+	xmlNodePtr rootcfg;
+
+	if (defop == NC_EDIT_DEFOP_NOTSET) {
+		defop = NC_EDIT_DEFOP_MERGE;
+	}
+
+	cfg = xmlReadMemory(config, strlen(config), NULL, NULL, XML_READ_OPT);
+	rootcfg = xmlDocGetRootElement(cfg);
+	if (!cfg || (rootcfg && !xmlStrEqual(rootcfg->name, BAD_CAST "interfaces"))) {
+		nc_verb_error("Invalid <edit-config> configuration data.");
+		*error = nc_err_new(NC_ERR_BAD_ELEM);
+		nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "config");
+		goto error_cleanup;
+	}
+
+	switch (target) {
+	case NC_DATASTORE_RUNNING:
+		aux = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, error);
+		if (!aux) {
+			goto error_cleanup;
+		}
+		cfgds = xmlReadMemory(aux, strlen(aux), NULL, NULL, XML_READ_OPT);
+		free(aux);
+		break;
+	case NC_DATASTORE_STARTUP:
+		cfgds = gds_startup;
+		break;
+	case NC_DATASTORE_CANDIDATE:
+		cfgds = gds_cand;
+		break;
+	default:
+		nc_verb_error("Invalid <edit-config> target.");
+		*error = nc_err_new(NC_ERR_BAD_ELEM);
+		nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "target");
+		goto error_cleanup;
+	}
+	store_rollback(xmlCopyDoc(cfgds, 1), target);
+
+	if (edit_config(cfgds, cfg, sysrepo_ds, defop, errop, (rpc != NULL ? rpc->nacm : NULL), error) != EXIT_SUCCESS) {
+		goto error_cleanup;
+	}
+
+	xmlFreeDoc(gds_run);
+	gds_run = cfgds;
+	internal_getconfig = 1;
+	ret = EXIT_SUCCESS;
+
+error_cleanup:
+	xmlFreeDoc(cfg);
+	return ret;
 }
 
 int sysrepo_copyconfig(void *UNUSED(data), NC_DATASTORE target, NC_DATASTORE source, char *config, struct nc_err **error) {

@@ -82,6 +82,12 @@ SERVER_MODULES_CONF = config/Netopeer.xml \
 	config/NETCONF-server.xml
 SERVER_OBJS = $(SERVER_SRCS:%.c=$(OBJDIR)/%.o)
 
+LNC_STATIC_SRCS = edit_config.c \
+	internal.c \
+	nacm.c \
+	with_defaults.c
+LNC_STATIC_OBJS = $(LNC_STATIC_SRCS:%.c=src/libnetconf/$(OBJDIR)/%.o)
+
 MANAGER_SRCS = manager/netopeer-manager.in
 
 CONFIGURATOR_SRCS = configurator/setup.py \
@@ -167,9 +173,9 @@ $(SERVER_MODULES_CONF): $(SERVER_MODULES_CONF:%=%.tmp)
 		@ROFF2HTML@ $< > $@; \
 	fi
 
-$(SERVER): $(SERVER_OBJS) $(SERVER_MODULES_CONF)
+$(SERVER): $(SERVER_OBJS) $(LNC_STATIC_OBJS) $(SERVER_MODULES_CONF)
 	@rm -f $@;
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(SERVER_OBJS) $(SERVER_LIBS) -o $@;
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(SERVER_OBJS) $(SERVER_LIBS) $(LNC_STATIC_OBJS) -o $@;
 
 manager/netopeer-manager: manager/netopeer-manager.tmp
 	$(call EXPAND,$<,$@)
@@ -180,9 +186,14 @@ $(OBJDIR)/%.o: %.c
 		(mkdir -p $(dir $@))
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(DEFINE) -fPIC -c $< -o $@
 
+src/libnetconf/$(OBJDIR)/%.o: src/libnetconf/%.c
+	@[ -d $(dir $@) ] || \
+		(mkdir -p $(dir $@))
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(DEFINE) -fPIC -c $< -o $@
+
 .PHONY: clean
 clean:
-	rm -rf $(SERVER) $(TOOLS) $(OBJDIR)
+	rm -rf $(SERVER) $(TOOLS) $(OBJDIR) src/libnetconf/$(OBJDIR)
 
 .PHONY: doc
 doc: $(MANHTMLS)

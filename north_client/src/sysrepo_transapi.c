@@ -29,7 +29,7 @@ int sysrepo_config_modified = 0;
  * TRANSAPI_CLBCKS_LEAF_TO_ROOT (default)
  * TRANSAPI_CLBCKS_ROOT_TO_LEAF
  */
-const TRANSAPI_CLBCKS_ORDER_TYPE sysrepo_callbacks_order = TRANSAPI_CLBCKS_ROOT_TO_LEAF;
+const TRANSAPI_CLBCKS_ORDER_TYPE sysrepo_callbacks_order = TRANSAPI_CLBCKS_ORDER_DEFAULT;
 
 /* Do not modify or set! This variable is set by libnetconf to announce edit-config's error-option
 Feel free to use it to distinguish module behavior for different error-option values.
@@ -62,20 +62,7 @@ extern int sysrepo_fd;
 
  * @return EXIT_SUCCESS or EXIT_FAILURE
  */
-int sysrepo_transapi_init(xmlDocPtr* running) {
-	/*int i;
-	unsigned int dev_count;
-	xmlNodePtr root, interface;
-	xmlNsPtr ns;
-	char** devices, *msg = NULL;
-
-	*running = xmlNewDoc(BAD_CAST "1.0");
-	root = xmlNewNode(NULL, BAD_CAST "interfaces");
-	ns = xmlNewNs(root, BAD_CAST "urn:ietf:params:xml:ns:yang:ietf-interfaces", NULL);
-	xmlSetNs(root, ns);
-
-	xmlDocSetRootElement(*running, root);*/
-
+int sysrepo_transapi_init(xmlDocPtr* UNUSED(running)) {
 	return EXIT_SUCCESS;
 }
 
@@ -93,7 +80,7 @@ void sysrepo_transapi_close(void) {
  * @param[out] err  Double pointer to error structure. Fill error when some occurs.
  * @return State data as libxml2 xmlDocPtr or NULL in case of error.
  */
-xmlDocPtr sysrepo_get_state_data (xmlDocPtr model, xmlDocPtr running, struct nc_err **err) {
+xmlDocPtr sysrepo_get_state_data(xmlDocPtr UNUSED(model), xmlDocPtr UNUSED(running), struct nc_err** err) {
 	xmlDocPtr doc, state_doc;
 	xmlNodePtr root, nodes;
 	xmlNsPtr ns;
@@ -101,18 +88,24 @@ xmlDocPtr sysrepo_get_state_data (xmlDocPtr model, xmlDocPtr running, struct nc_
 
 	if (sysrepo_fd == -1) {
 		nc_verb_error("%s: invalid sysrepo socket", __func__);
+		*err = nc_err_new(NC_ERR_OP_FAILED);
+		nc_err_set(*err, NC_ERR_PARAM_MSG, "Invalid sysrepo socket.");
 		return NULL;
 	}
 
 	srd_applyXPathOpDataStore(sysrepo_fd, NP_SYSREPO_IFC_DS, "/*/*[local-name()='interfaces-state']", &state_data);
 	if (state_data == NULL) {
 		nc_verb_error("%s: failed to get ifc state data from sysrepo", __func__);
+		*err = nc_err_new(NC_ERR_OP_FAILED);
+		nc_err_set(*err, NC_ERR_PARAM_MSG, "Failed to get state data from sysrepo.");
 		return NULL;
 	}
 
 	state_doc = xmlParseMemory(state_data, strlen(state_data));
 	if (state_doc == NULL) {
 		nc_verb_error("%s: failed to parse sysrepo ifc state data", __func__);
+		*err = nc_err_new(NC_ERR_OP_FAILED);
+		nc_err_set(*err, NC_ERR_PARAM_MSG, "Invalid sysrepo state data retrieved.");
 		return NULL;
 	}
 	free(state_data);
@@ -145,15 +138,50 @@ struct ns_pair sysrepo_namespace_mapping[] = {
 * You can safely modify the bodies of all function as well as add new functions for better lucidity of code.
 */
 
+int callback_if_interfaces(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr new_node, struct nc_err** error) {
+	return EXIT_SUCCESS;
+}
+
+int callback_if_interfaces_if_interface(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr new_node, struct nc_err** error) {
+	return EXIT_SUCCESS;
+}
+
+int callback_if_interfaces_if_interface_if_name(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr new_node, struct nc_err** error) {
+	return EXIT_SUCCESS;
+}
+
+int callback_if_interfaces_if_interface_if_description(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr new_node, struct nc_err** error) {
+	return EXIT_SUCCESS;
+}
+
+int callback_if_interfaces_if_interface_if_type(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr new_node, struct nc_err** error) {
+	return EXIT_SUCCESS;
+}
+
+int callback_if_interfaces_if_interface_if_enabled(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr new_node, struct nc_err** error) {
+	return EXIT_SUCCESS;
+}
+
+int callback_if_interfaces_if_interface_if_link_up_down_trap_enable(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr new_node, struct nc_err** error) {
+	return EXIT_SUCCESS;
+}
+
 /*
 * Structure transapi_config_callbacks provide mapping between callback and path in configuration datastore.
 * It is used by libnetconf library to decide which callbacks will be run.
 * DO NOT alter this structure
 */
 struct transapi_data_callbacks sysrepo_clbks =  {
-	.callbacks_count = 0,
+	.callbacks_count = 7,
 	.data = NULL,
 	.callbacks = {
+		{.path = "/if:interfaces", .func = callback_if_interfaces},
+		{.path = "/if:interfaces/if:interface", .func = callback_if_interfaces_if_interface},
+		{.path = "/if:interfaces/if:interface/if:name", .func = callback_if_interfaces_if_interface_if_name},
+		{.path = "/if:interfaces/if:interface/if:description", .func = callback_if_interfaces_if_interface_if_description},
+		{.path = "/if:interfaces/if:interface/if:type", .func = callback_if_interfaces_if_interface_if_type},
+		{.path = "/if:interfaces/if:interface/if:enabled", .func = callback_if_interfaces_if_interface_if_enabled},
+		{.path = "/if:interfaces/if:interface/if:link-up-down-trap-enable", .func = callback_if_interfaces_if_interface_if_link_up_down_trap_enable}
 	}
 };
 
