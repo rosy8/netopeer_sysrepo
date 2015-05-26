@@ -109,6 +109,12 @@ CFGS =	config/netopeer-cfgnetopeer.yin \
 	config/ietf-netconf-server-schematron.xsl \
 	@SERVER_TLS_CFGS@
 
+SYSREPO_CFGS = ietf-interfaces.yin \
+	iana-if-type.yin \
+	ietf-interfaces-config.rng \
+	ietf-interfaces-gdefs-config.rng \
+	ietf-interfaces-schematron.xsl
+
 CFGS_TAR = $(CFGS) \
 	config/netopeer-cfgnetopeer.yang \
 	config/ietf-netconf-server.yang \
@@ -229,7 +235,9 @@ install: $(SERVER) $(TOOLS) $(CFGS) $(MANPAGES) $(MANHTMLS)
 		$(INSTALL_DATA_PRIVATE) $$i $(CFGDIR)/cfgnetopeer/; \
 	done
 	$(INSTALL) -d $(sysrepoifcdir)
-	$(INSTALL_DATA_PRIVATE) ietf-interfaces.yin $(sysrepoifcdir)
+	for i in $(SYSREPO_CFGS); do \
+		$(INSTALL_DATA_PRIVATE) $$i $(sysrepoifcdir); \
+	done
 	$(INSTALL) -d $(DESTDIR)/$(sysconfdir)/init.d/;
 	$(INSTALL_PROGRAM) -m 755 netopeer.rc $(DESTDIR)/$(sysconfdir)/init.d/
 	$(foreach man,$(MANPAGES),$(call MANINSTALL,$(man)))

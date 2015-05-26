@@ -70,6 +70,8 @@ extern struct np_options netopeer_options;
 extern struct transapi sysrepo_transapi;
 extern struct ncds_custom_funcs sysrepo_funcs;
 
+struct ncds_ds* sysrepo_ds;
+
 #ifndef DISABLE_CALLHOME
 extern pthread_mutex_t callhome_lock;
 extern struct client_struct* callhome_client;
@@ -679,8 +681,6 @@ int main(int argc, char** argv) {
 	int daemonize = 0, len;
 	int listen_init = 1;
 	struct np_module* netopeer_module = NULL, *server_module = NULL;
-
-	struct ncds_ds* sysrepo;
 	ncds_id sysrepo_id;
 
 	/* initialize message system and set verbose and debug variables */
@@ -795,31 +795,38 @@ restart:
 	}
 
 	/* prepare the sysrepo module */
-	sysrepo = ncds_new_transapi_static(NCDS_TYPE_CUSTOM, NP_SYSREPO_IFC_DIR "/ietf-interfaces.yin", &sysrepo_transapi);
-	if (sysrepo == NULL) {
+	sysrepo_ds = ncds_new_transapi_static(NCDS_TYPE_CUSTOM, NP_SYSREPO_IFC_DIR "/ietf-interfaces.yin", &sysrepo_transapi);
+	if (sysrepo_ds == NULL) {
 		nc_verb_error("Creating sysrepo ifc datastore failed.");
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
 		return EXIT_FAILURE;
 	}
-	ncds_custom_set_data(sysrepo, NULL, &sysrepo_funcs);
-	if ((sysrepo_id = ncds_init(sysrepo)) < 0) {
+	if (ncds_add_model(NP_SYSREPO_IFC_DIR "/iana-if-type.yin") != 0) {
+		nc_verb_error("Adding iana-if-type model failed.");
+		ncds_free(sysrepo_ds);
+		module_disable(server_module, 1);
+		module_disable(netopeer_module, 1);
+		return EXIT_FAILURE;
+	}
+	ncds_custom_set_data(sysrepo_ds, NULL, &sysrepo_funcs);
+	if ((sysrepo_id = ncds_init(sysrepo_ds)) < 0) {
 		nc_verb_error("Initiating sysrepo ifc datastore failed (error code %d).", sysrepo_id);
-		ncds_free(sysrepo);
+		ncds_free(sysrepo_ds);
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
 		return EXIT_FAILURE;
 	}
 	if (ncds_consolidate() != 0) {
 		nc_verb_error("Consolidating data models failed.");
-		ncds_free(sysrepo);
+		ncds_free(sysrepo_ds);
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
 		return EXIT_FAILURE;
 	}
 	if (ncds_device_init(&sysrepo_id, NULL, 1) != 0) {
 		nc_verb_error("Initiating sysrepo ifc module failed.");
-		ncds_free(sysrepo);
+		ncds_free(sysrepo_ds);
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
 		return EXIT_FAILURE;
@@ -831,7 +838,8 @@ restart:
 	listen_loop(listen_init);
 
 	/* remove sysrepo DS */
-	ncds_free(sysrepo);
+	ncds_free(sysrepo_ds);
+	sysrepo_ds = NULL;
 
 	/* unload Netopeer module -> unload all modules */
 	module_disable(server_module, 1);
