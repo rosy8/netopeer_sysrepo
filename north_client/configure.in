@@ -469,6 +469,7 @@ AC_CONFIG_FILES(manager/netopeer-manager.tmp:manager/netopeer-manager.in)
 AC_CONFIG_FILES(config/Netopeer.xml.tmp:config/Netopeer.xml.in)
 AC_CONFIG_FILES(config/NETCONF-server.xml.tmp:config/NETCONF-server.xml.in)
 AC_CONFIG_FILES(src/config.h)
+AC_CONFIG_FILES(../sysrepo_config.h)
 AC_CONFIG_FILES(netopeer-server.spec)
 AC_CONFIG_FILES(netopeer.rc)
 if test "$NPCONF" = "yes"; then

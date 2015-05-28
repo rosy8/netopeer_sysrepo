@@ -67,7 +67,7 @@ INSTALL_DATA_PRIVATE = @INSTALL@ -m 600
 RPMDIR = RPMBUILD
 
 SERVER = netopeer-server
-SERVER_LIBS = libsrd.a @SERVER_LIBS@
+SERVER_LIBS = ../libsrd.a @SERVER_LIBS@
 SERVER_SRCS =  src/server.c \
 	src/cfgnetopeer_transapi.c \
 	src/netconf_server_transapi.c \

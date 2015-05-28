@@ -5867,6 +5867,8 @@ ac_config_files="$ac_config_files config/NETCONF-server.xml.tmp:config/NETCONF-s
 
 ac_config_files="$ac_config_files src/config.h"
 
+ac_config_files="$ac_config_files ../sysrepo_config.h"
+
 ac_config_files="$ac_config_files netopeer-server.spec"
 
 ac_config_files="$ac_config_files netopeer.rc"
@@ -6587,6 +6589,7 @@ do
     "config/Netopeer.xml.tmp") CONFIG_FILES="$CONFIG_FILES config/Netopeer.xml.tmp:config/Netopeer.xml.in" ;;
     "config/NETCONF-server.xml.tmp") CONFIG_FILES="$CONFIG_FILES config/NETCONF-server.xml.tmp:config/NETCONF-server.xml.in" ;;
     "src/config.h") CONFIG_FILES="$CONFIG_FILES src/config.h" ;;
+    "../sysrepo_config.h") CONFIG_FILES="$CONFIG_FILES ../sysrepo_config.h" ;;
     "netopeer-server.spec") CONFIG_FILES="$CONFIG_FILES netopeer-server.spec" ;;
     "netopeer.rc") CONFIG_FILES="$CONFIG_FILES netopeer.rc" ;;
     "configurator/netopeer/config.py") CONFIG_FILES="$CONFIG_FILES configurator/netopeer/config.py" ;;

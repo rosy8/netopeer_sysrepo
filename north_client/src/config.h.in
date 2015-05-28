@@ -10,6 +10,7 @@
 #include <libnetconf.h>
 #include <libnetconf_xml.h>
 
+#include "../../sysrepo_config.h"
 #include "cfgnetopeer_transapi.h"
 #include "netconf_server_transapi.h"
 
@@ -43,9 +44,6 @@
 
 /* environment variable with verbose level */
 #define ENVIRONMENT_VERBOSE "NETOPEER_VERBOSE"
-
-#define NP_SYSREPO_IFC_DS "urn:ietf:params:xml:ns:yang:ietf-interfaces"
-#define NP_SYSREPO_IFC_DIR "@prefix@/var/sysrepo_ifc/"
 
 /* names of the 2 base netopeer static transapi modules */
 #define NETOPEER_MODULE_NAME "Netopeer"

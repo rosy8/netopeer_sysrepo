@@ -1,5 +1,3 @@
-#define NP_SYSREPO_IFC_DS "urn:ietf:params:xml:ns:yang:ietf-interfaces"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +6,8 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#include "srd.h"
+#include "../sysrepo_config.h"
+#include "../srd.h"
 
 #define MSGLENFIELDWIDTH 7
 

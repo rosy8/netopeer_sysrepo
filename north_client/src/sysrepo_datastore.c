@@ -7,7 +7,7 @@
 
 #include <libnetconf.h>
 
-#include "srd.h"
+#include "../../srd.h"
 #include "libnetconf/edit_config.h"
 #include "config.h"
 
