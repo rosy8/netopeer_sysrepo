@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <errno.h>
 
 #include <libnetconf.h>
 
@@ -41,12 +42,13 @@ xmlDocPtr gds_run = NULL;
 xmlDocPtr gds_startup = NULL;
 xmlDocPtr gds_cand = NULL;
 
+char* sysrepo_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error);
 int edit_config(xmlDocPtr repo, xmlDocPtr edit, struct ncds_ds* ds, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE errop, const struct nacm_rpc* nacm, struct nc_err **error);
 int srd_isServerResponseOK(int sockfd, char** OKcontent);
 
 int sysrepo_init(void* UNUSED(data)) {
 	const char server_ip[] = "127.0.0.1";
-	char* ds_list;
+	char* ds_list, *aux;
 
 	if (srd_connect((char*)server_ip, SRD_DEFAULTSERVERPORT, &sysrepo_fd) != 1) {
 		nc_verb_error("Failed to connect to sysrepo on %s:%d", server_ip, SRD_DEFAULTSERVERPORT);
@@ -58,19 +60,55 @@ int sysrepo_init(void* UNUSED(data)) {
 		return EXIT_FAILURE;
 	}
 
-	if (strstr(ds_list, NP_SYSREPO_IFC_DS) == NULL) {
-		nc_verb_error("Sysrepo does not have the ifc datastore created");
+	if (strstr(ds_list, NP_SYSREPO_IFC_DS "/interfaces-state") == NULL) {
+		nc_verb_error("Sysrepo does not have the ifc operational datastore created");
+		free(ds_list);
 		return EXIT_FAILURE;
 	}
 	free(ds_list);
 
-	gds_startup = xmlNewDoc(BAD_CAST "1.0");
-	gds_cand = xmlNewDoc(BAD_CAST "1.0");
+	if (!srd_listDataStores(sysrepo_fd, &ds_list)) {
+		nc_verb_error("Failed to get sysrepo datastores");
+		return EXIT_FAILURE;
+	}
+
+	if (strstr(ds_list, NP_SYSREPO_IFC_DS "/interfaces") == NULL) {
+		nc_verb_error("Sysrepo does not have the ifc datastore created");
+		free(ds_list);
+		return EXIT_FAILURE;
+	}
+	free(ds_list);
+
+	if (!srd_setDataStore(sysrepo_fd, NP_SYSREPO_IFC_DS "/interfaces")) {
+		nc_verb_error("Cannot use sysrepo datastore");
+		return EXIT_FAILURE;
+	}
+
+	aux = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, NULL);
+	if (!aux) {
+		nc_verb_error("Failed to get sysrepo ifc data.");
+		return EXIT_FAILURE;
+	}
+	gds_cand = xmlReadMemory(aux, strlen(aux), NULL, NULL, XML_READ_OPT);
+	free(aux);
+
+	if (eaccess(NP_SYSREPO_IFC_DIR "/startup.xml", R_OK) != -1) {
+		gds_startup = xmlReadFile(NP_SYSREPO_IFC_DIR "/startup.xml", NULL, XML_READ_OPT);
+		if (gds_startup == NULL) {
+			nc_verb_warning("Could not parse sysrepo ifc startup config.");
+		}
+	}
+
+	if (gds_startup == NULL) {
+		gds_startup = xmlCopyDoc(gds_cand, 1);
+	}
 
 	return EXIT_SUCCESS;
 }
 
 void sysrepo_free(void* UNUSED(data)) {
+	FILE* startup_file;
+
     if (sysrepo_fd != -1) {
 		char msg[50];
 		sprintf(msg, "<xml><command>disconnect</command></xml>");
@@ -82,6 +120,16 @@ void sysrepo_free(void* UNUSED(data)) {
 		}
 		close(sysrepo_fd);
 		sysrepo_fd = -1;
+	}
+
+	startup_file = fopen(NP_SYSREPO_IFC_DIR "/startup.xml", "w");
+	if (startup_file == NULL) {
+		nc_verb_warning("Failed to store startup config (%s).", strerror(errno));
+	} else {
+		if (xmlDocFormatDump(startup_file, gds_startup, 1) == -1) {
+			nc_verb_warning("Failed to dump startup config doc.");
+		}
+		fclose(startup_file);
 	}
 
 	xmlFreeDoc(gds_run);
@@ -111,6 +159,10 @@ int sysrepo_lock(void* UNUSED(data), NC_DATASTORE target, const char* session_id
 
 	switch (target) {
 	case NC_DATASTORE_RUNNING:
+		if (!srd_lockDataStore(sysrepo_fd)) {
+			nc_verb_error("Failed to lock datastore.");
+			return EXIT_FAILURE;
+		}
 		locked = &(locks.running);
 		sid = &(locks.running_sid);
 		break;
@@ -148,6 +200,10 @@ int sysrepo_unlock(void* UNUSED(data), NC_DATASTORE target, const char* session_
 
 	switch (target) {
 	case NC_DATASTORE_RUNNING:
+		if (!srd_unlockDataStore(sysrepo_fd)) {
+			nc_verb_error("Failed to unlock datastore.");
+			return EXIT_FAILURE;
+		}
 		locked = &(locks.running);
 		sid = &(locks.running_sid);
 		break;
@@ -195,9 +251,9 @@ char* sysrepo_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err**
 	case NC_DATASTORE_RUNNING:
 		if (internal_getconfig) {
 			xmlDocDumpMemory(gds_run, &config_data, NULL);
-			internal_getconfig = 0;
+			--internal_getconfig;
 		} else {
-			srd_applyXPathOpDataStore(sysrepo_fd, NP_SYSREPO_IFC_DS, "/*/*[local-name()='interfaces']", (char**)&config_data);
+			srd_applyXPath(sysrepo_fd, "/*[local-name()='data']/*[local-name()='interfaces']", (char**)&config_data);
 		}
 		break;
 	case NC_DATASTORE_STARTUP:
@@ -250,16 +306,16 @@ int sysrepo_deleteconfig(void *UNUSED(data), NC_DATASTORE target, struct nc_err 
 int sysrepo_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE target, const char* config, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE errop, struct nc_err** error) {
 	int ret = EXIT_FAILURE;
 	char* aux;
-	xmlDocPtr cfgds = NULL, cfg = NULL;
-	xmlNodePtr rootcfg;
+	xmlDocPtr old_doc = NULL, new_doc = NULL;
+	xmlNodePtr root;
 
 	if (defop == NC_EDIT_DEFOP_NOTSET) {
 		defop = NC_EDIT_DEFOP_MERGE;
 	}
 
-	cfg = xmlReadMemory(config, strlen(config), NULL, NULL, XML_READ_OPT);
-	rootcfg = xmlDocGetRootElement(cfg);
-	if (!cfg || (rootcfg && !xmlStrEqual(rootcfg->name, BAD_CAST "interfaces"))) {
+	new_doc = xmlReadMemory(config, strlen(config), NULL, NULL, XML_READ_OPT);
+	root = xmlDocGetRootElement(new_doc);
+	if (!new_doc || (root && !xmlStrEqual(root->name, BAD_CAST "interfaces"))) {
 		nc_verb_error("Invalid <edit-config> configuration data.");
 		*error = nc_err_new(NC_ERR_BAD_ELEM);
 		nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "config");
@@ -270,16 +326,19 @@ int sysrepo_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE targe
 	case NC_DATASTORE_RUNNING:
 		aux = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, error);
 		if (!aux) {
+			nc_verb_error("Failed to get sysrepo ifc data.");
+			*error = nc_err_new(NC_ERR_OP_FAILED);
+			nc_err_set(*error, NC_ERR_PARAM_MSG, "Sysrepo <get-config> failed");
 			goto error_cleanup;
 		}
-		cfgds = xmlReadMemory(aux, strlen(aux), NULL, NULL, XML_READ_OPT);
+		old_doc = xmlReadMemory(aux, strlen(aux), NULL, NULL, XML_READ_OPT);
 		free(aux);
 		break;
 	case NC_DATASTORE_STARTUP:
-		cfgds = gds_startup;
+		old_doc = gds_startup;
 		break;
 	case NC_DATASTORE_CANDIDATE:
-		cfgds = gds_cand;
+		old_doc = gds_cand;
 		break;
 	default:
 		nc_verb_error("Invalid <edit-config> target.");
@@ -287,179 +346,146 @@ int sysrepo_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE targe
 		nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "target");
 		goto error_cleanup;
 	}
-	store_rollback(xmlCopyDoc(cfgds, 1), target);
+	store_rollback(xmlCopyDoc(old_doc, 1), target);
 
-	if (edit_config(cfgds, cfg, sysrepo_ds, defop, errop, (rpc != NULL ? rpc->nacm : NULL), error) != EXIT_SUCCESS) {
+	if (edit_config(old_doc, new_doc, sysrepo_ds, defop, errop, (rpc != NULL ? rpc->nacm : NULL), error) != EXIT_SUCCESS) {
 		goto error_cleanup;
 	}
 
-	xmlFreeDoc(gds_run);
-	gds_run = cfgds;
-	internal_getconfig = 1;
+	if (target == NC_DATASTORE_RUNNING) {
+		xmlFreeDoc(gds_run);
+		gds_run = old_doc;
+		internal_getconfig = 2;
+	}
 	ret = EXIT_SUCCESS;
 
 error_cleanup:
-	xmlFreeDoc(cfg);
+	xmlFreeDoc(new_doc);
 	return ret;
 }
 
-int sysrepo_copyconfig(void *UNUSED(data), NC_DATASTORE target, NC_DATASTORE source, char *config, struct nc_err **error) {
-	/* TODO */
-// 	int ret = EXIT_FAILURE;
-//     char *s;
-//     xmlDocPtr src_doc = NULL;
-//     xmlDocPtr dst_doc = NULL;
-//     xmlNodePtr root;
-//     static const char *ds[] = {"error", "<config>", "URL", "running",
-//                                "startup", "candidate"};
-//
-//     nc_verb_verbose("OFC COPY-CONFIG (from %s to %s)", ds[source], ds[target]);
-//
-//     switch (source) {
-//     case NC_DATASTORE_RUNNING:
-//         s = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, error);
-//         if (!s) {
-//             nc_verb_error
-//                 ("copy-config: unable to get running source repository");
-//             return EXIT_FAILURE;
-//         }
-//         src_doc = xmlReadMemory(s, strlen(s), NULL, NULL, XML_READ_OPT);
-//         free(s);
-//         if (!src_doc) {
-//             nc_verb_error("copy-config: invalid running source data");
-//             *error = nc_err_new(NC_ERR_OP_FAILED);
-//             nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM,
-//                        "invalid running source data");
-//             return EXIT_FAILURE;
-//         }
-//         break;
-//     case NC_DATASTORE_STARTUP:
-//         src_doc = xmlCopyDoc(gds_startup, 1);
-//         break;
-//     case NC_DATASTORE_CANDIDATE:
-//         src_doc = xmlCopyDoc(gds_cand, 1);
-//         break;
-//     case NC_DATASTORE_CONFIG:
-//         if (config && strlen(config) > 0) {
-//             src_doc = xmlReadMemory(config, strlen(config), NULL, NULL,
-//                                     XML_READ_OPT);
-//         }
-//         if (!config || (strlen(config) > 0 && !src_doc)) {
-//             nc_verb_error("Invalid source configuration data.");
-//             *error = nc_err_new(NC_ERR_BAD_ELEM);
-//             nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "config");
-//             return EXIT_FAILURE;
-//         }
-//
-//         break;
-//     default:
-//         nc_verb_error("Invalid <get-config> source.");
-//         *error = nc_err_new(NC_ERR_BAD_ELEM);
-//         nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "source");
-//         return EXIT_FAILURE;
-//     }
-//
-//     switch (target) {
-//     case NC_DATASTORE_RUNNING:
-//         /* apply source to OVSDB */
-//
-//         s = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, error);
-//         if (!s) {
-//             nc_verb_error("copy-config: unable to get running source data");
-//             goto cleanup;
-//         }
-//         dst_doc = xmlReadMemory(s, strlen(s), NULL, NULL, XML_READ_OPT);
-//         free(s);
-//
-//         root = xmlDocGetRootElement(src_doc);
-//         if (!dst_doc) {
-//             /* create envelope */
-//             dst_doc = xmlNewDoc(BAD_CAST "1.0");
-//         }
-//         if (!rollbacking) {
-//             store_rollback(xmlCopyDoc(dst_doc, 1), target);
-//         }
-//
-//         txn_init();
-//         if (edit_replace(dst_doc, root, 1, error)) {
-//             txn_abort();
-//         } else {
-//             ret = txn_commit(error);
-//         }
-//         xmlFreeDoc(dst_doc);
-//         goto cleanup;
-//         break;
-//     case NC_DATASTORE_STARTUP:
-//     case NC_DATASTORE_CANDIDATE:
-//         /* create copy */
-//         if (src_doc) {
-//             dst_doc = src_doc;
-//             src_doc = NULL;
-//         }
-//
-//         /* store the copy */
-//         if (target == NC_DATASTORE_STARTUP) {
-//             if (!rollbacking) {
-//                 store_rollback(gds_startup, target);
-//             } else {
-//                 xmlFreeDoc(gds_startup);
-//             }
-//             gds_startup = dst_doc;
-//         } else {                /* NC_DATASTORE_CANDIDATE */
-//             if (!rollbacking) {
-//                 store_rollback(gds_cand, target);
-//             } else {
-//                 xmlFreeDoc(gds_cand);
-//             }
-//             gds_cand = dst_doc;
-//         }
-//
-//         break;
-//     default:
-//         nc_verb_error("Invalid <get-config> source.");
-//         *error = nc_err_new(NC_ERR_BAD_ELEM);
-//         nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "source");
-//         goto cleanup;
-//     }
-//
-//     ret = EXIT_SUCCESS;
-//
-// cleanup:
-//     xmlFreeDoc(src_doc);
-//
-//     return ret;
+int sysrepo_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE source, char* config, struct nc_err** error) {
+	char* aux;
+	xmlDocPtr src_doc = NULL;
+	xmlDocPtr dst_doc = NULL;
+
+	switch (source) {
+	case NC_DATASTORE_RUNNING:
+		aux = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, error);
+		if (!aux) {
+			nc_verb_error("Failed to get sysrepo ifc data.");
+			*error = nc_err_new(NC_ERR_OP_FAILED);
+			nc_err_set(*error, NC_ERR_PARAM_MSG, "Sysrepo <get-config> failed");
+			return EXIT_FAILURE;
+		}
+		src_doc = xmlReadMemory(aux, strlen(aux), NULL, NULL, XML_READ_OPT);
+		free(aux);
+		break;
+	case NC_DATASTORE_STARTUP:
+		src_doc = xmlCopyDoc(gds_startup, 1);
+		break;
+	case NC_DATASTORE_CANDIDATE:
+		src_doc = xmlCopyDoc(gds_cand, 1);
+		break;
+	case NC_DATASTORE_CONFIG:
+		if (config) {
+			if (strlen(config) > 0) {
+				src_doc = xmlReadMemory(config, strlen(config), NULL, NULL, XML_READ_OPT);
+			} else {
+				src_doc = xmlNewDoc(BAD_CAST "1.0");
+			}
+		}
+		if (!config || !src_doc) {
+			nc_verb_error("Invalid source configuration data.");
+			*error = nc_err_new(NC_ERR_BAD_ELEM);
+			nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "config");
+			return EXIT_FAILURE;
+		}
+
+		break;
+	default:
+		nc_verb_error("Invalid <get-config> source.");
+		*error = nc_err_new(NC_ERR_BAD_ELEM);
+		nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "source");
+		return EXIT_FAILURE;
+	}
+
+	switch (target) {
+	case NC_DATASTORE_RUNNING:
+		aux = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, error);
+		if (!aux) {
+			nc_verb_error("Failed to get sysrepo ifc data.");
+			*error = nc_err_new(NC_ERR_OP_FAILED);
+			nc_err_set(*error, NC_ERR_PARAM_MSG, "Sysrepo <get-config> failed");
+			return EXIT_FAILURE;
+		}
+		dst_doc = xmlReadMemory(aux, strlen(aux), NULL, NULL, XML_READ_OPT);
+		free(aux);
+
+		if (!dst_doc) {
+			/* create envelope */
+			dst_doc = xmlNewDoc(BAD_CAST "1.0");
+		}
+		if (!rollbacking) {
+			store_rollback(dst_doc, target);
+		}
+
+		xmlFreeDoc(gds_run);
+		gds_run = src_doc;
+		internal_getconfig = 1;
+		break;
+    case NC_DATASTORE_STARTUP:
+		if (!rollbacking) {
+			store_rollback(gds_startup, target);
+		} else {
+			xmlFreeDoc(gds_startup);
+		}
+		gds_startup = src_doc;
+		break;
+	case NC_DATASTORE_CANDIDATE:
+		if (!rollbacking) {
+			store_rollback(gds_cand, target);
+		} else {
+			xmlFreeDoc(gds_cand);
+		}
+		gds_cand = src_doc;
+		break;
+	default:
+		nc_verb_error("Invalid <get-config> source.");
+		*error = nc_err_new(NC_ERR_BAD_ELEM);
+		nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "source");
+		return EXIT_FAILURE;
+	}
+
 	return EXIT_SUCCESS;
 }
 
 int sysrepo_rollback(void* UNUSED(data)) {
-	/* TODO */
-//     xmlChar *data;
-//     int size, ret;
-//     struct nc_err *e;
-//
-//     if (rollback.type == NC_DATASTORE_ERROR) {
-//         nc_verb_error("No data to rollback");
-//         return EXIT_FAILURE;
-//     }
-//
-//     /* dump data for copy-config */
-//     if (rollback.doc) {
-//         xmlDocDumpMemory(rollback.doc, &data, &size);
-//     } else {
-//         data = xmlStrdup(BAD_CAST "");
-//     }
-//     rollbacking = 1;
-//     ret = sysrepo_copyconfig(NULL, rollback.type, NC_DATASTORE_CONFIG,
-//                            (char *) data, &e);
-//     rollbacking = 0;
-//
-//     if (ret) {
-//         nc_err_free(e);
-//     }
-//     xmlFree(data);
-//
-//     return ret;
-	return EXIT_SUCCESS;
+	xmlChar *data;
+	int size, ret;
+	struct nc_err *e;
+
+	if (rollback.type == NC_DATASTORE_ERROR) {
+		nc_verb_error("No data to rollback");
+		return EXIT_FAILURE;
+	}
+
+	/* dump data for copy-config */
+	if (rollback.doc) {
+		xmlDocDumpMemory(rollback.doc, &data, &size);
+	} else {
+		data = xmlStrdup(BAD_CAST "");
+	}
+	rollbacking = 1;
+	ret = sysrepo_copyconfig(NULL, rollback.type, NC_DATASTORE_CONFIG, (char*)data, &e);
+	rollbacking = 0;
+
+	if (ret) {
+		nc_err_free(e);
+	}
+	xmlFree(data);
+
+	return ret;
 }
 
 struct ncds_custom_funcs sysrepo_funcs = {
