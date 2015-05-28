@@ -65,7 +65,11 @@ void client_free_ssh(struct client_struct_ssh* client) {
 
 	ret = pthread_mutex_destroy(&client->client_lock);
 	if (ret != 0) {
-		nc_verb_error("%s: mutex destroy failed (%s), continuing", __func__, strerror(ret));
+		if (ret == EBUSY) {
+			nc_verb_error("%s: mutex destroy failed (%s), likely the bug #16657 of glibc < v2.21", __func__, strerror(ret));
+		} else {
+			nc_verb_error("%s: mutex destroy failed (%s), continuing", __func__, strerror(ret));
+		}
 	}
 
 	if (client->sock != -1) {
@@ -683,7 +687,10 @@ int np_ssh_client_data(struct client_struct_ssh* client) {
 			}
 			/* GLOBAL READ LOCK */
 			pthread_rwlock_rdlock(&netopeer_state.global_lock);
-			/* continue with the next client again holding the read lock */
+			/* CLIENT UNLOCK */
+			pthread_mutex_unlock(&client->client_lock);
+
+			/* continue with the next client again holding only the read lock */
 			return 1;
 		}
 
@@ -717,6 +724,10 @@ int np_ssh_client_data(struct client_struct_ssh* client) {
 
 			/* mark client for deletion */
 			client->to_free = 1;
+
+			/* CLIENT UNLOCK */
+			pthread_mutex_unlock(&client->client_lock);
+
 			return 0;
 		}
 
@@ -728,6 +739,10 @@ int np_ssh_client_data(struct client_struct_ssh* client) {
 			}
 
 			client->to_free = 1;
+
+			/* CLIENT UNLOCK */
+			pthread_mutex_unlock(&client->client_lock);
+
 			return 0;
 		}
 	}
@@ -740,6 +755,10 @@ int np_ssh_client_data(struct client_struct_ssh* client) {
 			}
 		} else {
 			client->to_free = 1;
+
+			/* CLIENT UNLOCK */
+			pthread_mutex_unlock(&client->client_lock);
+
 			return 1;
 		}
 	}
@@ -817,10 +836,10 @@ int np_ssh_client_data(struct client_struct_ssh* client) {
 }
 
 int sshcb_msg(ssh_session session, ssh_message msg, void* UNUSED(data)) {
-	const char* str_type, *str_subtype, *username;
+	const char* str_type, *str_subtype = NULL, *username;
 	int subtype, type;
 	struct client_struct_ssh* client;
-	struct chan_struct* channel;
+	struct chan_struct* channel = NULL;
 
 	type = ssh_message_type(msg);
 	subtype = ssh_message_subtype(msg);

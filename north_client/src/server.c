@@ -609,7 +609,7 @@ void listen_loop(int do_init) {
 			case NC_TRANSPORT_TLS:
 				ret = np_tls_create_client((struct client_struct_tls*)new_client, tlsctx);
 				if (ret != 0) {
-					new_client->to_free = 1;
+					free(new_client);
 					client_free_tls((struct client_struct_tls*)new_client);
 				}
 				break;
@@ -622,7 +622,6 @@ void listen_loop(int do_init) {
 
 			/* client is not valid, some error occured */
 			if (ret != 0) {
-				free(new_client);
 				continue;
 			}
 
