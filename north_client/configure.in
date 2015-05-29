@@ -37,7 +37,7 @@
 #
 
 # Process this file with autoconf to produce a configure script.
-AC_INIT([netopeer-server], m4_esyscmd([cut -f1 ./VERSION | tr -d '\n']))
+AC_INIT([netopeer-sysrepo], m4_esyscmd([cut -f1 ./VERSION | tr -d '\n']))
 
 m4_include([m4/ax_pthread.m4])
 m4_include([m4/ax_python_module.m4])
@@ -176,6 +176,18 @@ AC_ARG_WITH([libnetconf],
 REQS="$REQS libnetconf"
 BUILDREQS="$BUILDREQS libnetconf-devel"
 SERVER_LIBS=$LIBS
+
+AC_ARG_WITH([sysrepod],
+	[AC_HELP_STRING([--with-sysrepod=PATH],[Set the path of your local sysrepod repository clone])],
+	[SYSREPOD_PATH=$with_sysrepod],
+	[AC_MSG_ERROR([The path to sysrepod repository must be set, use "--with-sysrepod=PATH"])]
+)
+
+if test ! -e "$SYSREPOD_PATH/srd.h" -a ! -e "SYSREPOD_PATH/libsrd.a"; then
+	AC_MSG_ERROR([Sysrepod repository must contain "srd.h" and "libsrd.a"])
+else
+	CPPFLAGS="-I$SYSREPOD_PATH $CPPFLAGS"
+fi
 
 
 ############################ Check for programs ################################
@@ -338,11 +350,11 @@ AX_PTHREAD([
 AC_ARG_WITH([modules-dir],
 	AC_HELP_STRING([--with-modules-dir=DIR],
 		[path to directory where netopeer modules configuration will be stored
-		($(sysconfdir)/netopeer/modules.conf.d/ by default)])
+		($(sysconfdir)/netopeer_sysrepo/modules.conf.d/ by default)])
 	,
 	MODULESDIR="$withval"
 	,
-	MODULESDIR="${sysconfdir}/netopeer/modules.conf.d/"
+	MODULESDIR="${sysconfdir}/netopeer_sysrepo/modules.conf.d/"
 )
 
 # remove backup files
@@ -458,6 +470,7 @@ AC_SUBST(NCSERVER_FEATURES)
 AC_SUBST(NETOPEER_FEATURES)
 AC_SUBST(SSH)
 AC_SUBST(TLS)
+AC_SUBST(SYSREPOD_PATH)
 
 AC_SUBST(RPMBUILD)
 if test -z "$RPMBUILD"; then
@@ -465,13 +478,10 @@ if test -z "$RPMBUILD"; then
 fi
 
 AC_CONFIG_FILES(Makefile)
-AC_CONFIG_FILES(manager/netopeer-manager.tmp:manager/netopeer-manager.in)
+AC_CONFIG_FILES(../south_client/Makefile)
 AC_CONFIG_FILES(config/Netopeer.xml.tmp:config/Netopeer.xml.in)
 AC_CONFIG_FILES(config/NETCONF-server.xml.tmp:config/NETCONF-server.xml.in)
 AC_CONFIG_FILES(src/config.h)
-AC_CONFIG_FILES(../sysrepo_config.h)
-AC_CONFIG_FILES(netopeer-server.spec)
-AC_CONFIG_FILES(netopeer.rc)
 if test "$NPCONF" = "yes"; then
 	AC_CONFIG_FILES(configurator/netopeer/config.py)
 fi

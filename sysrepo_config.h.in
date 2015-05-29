@@ -1,2 +1,0 @@
-#define NP_SYSREPO_IFC_DS "urn:ietf:params:xml:ns:yang:ietf-interfaces"
-#define NP_SYSREPO_IFC_DIR "@prefix@/var/sysrepo_ifc/"

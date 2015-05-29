@@ -2,15 +2,15 @@
 	<name>NETCONF-server</name>
 	<data-models>
 		<model>
-			<path>@sysconfdir@/netopeer/cfgnetopeer/ietf-x509-cert-to-name.yin</path>
+			<path>@sysconfdir@/netopeer_sysrepo/cfgnetopeer/ietf-x509-cert-to-name.yin</path>
 		</model>
 		<model-main>
-			<path>@sysconfdir@/netopeer/cfgnetopeer/ietf-netconf-server.yin</path>
+			<path>@sysconfdir@/netopeer_sysrepo/cfgnetopeer/ietf-netconf-server.yin</path>
 			@NCSERVER_FEATURES@
 		</model-main>
 	</data-models>
 	<repo>
 		<type>file</type>
-		<path>@sysconfdir@/netopeer/cfgnetopeer/datastore-server.xml</path>
+		<path>@sysconfdir@/netopeer_sysrepo/cfgnetopeer/datastore-server.xml</path>
 	</repo>
 </device>

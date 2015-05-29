@@ -2,12 +2,12 @@
 	<name>Netopeer</name>
 	<data-models>
 		<model-main>
-			<path>@sysconfdir@/netopeer/cfgnetopeer/netopeer-cfgnetopeer.yin</path>
+			<path>@sysconfdir@/netopeer_sysrepo/cfgnetopeer/netopeer-cfgnetopeer.yin</path>
 			@NETOPEER_FEATURES@
 		</model-main>
 	</data-models>
 	<repo>
 		<type>file</type>
-		<path>@sysconfdir@/netopeer/cfgnetopeer/datastore.xml</path>
+		<path>@sysconfdir@/netopeer_sysrepo/cfgnetopeer/datastore.xml</path>
 	</repo>
 </device>

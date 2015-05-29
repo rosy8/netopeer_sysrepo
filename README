@@ -1,0 +1,42 @@
+netopeer_sysrepo
+----------------
+
+To run this example NETCONF server and allow
+it to manage a datastore, follow these steps,
+in order:
+
+
+Compilation
+~~~~~~~~~~~
+
+1. north_client
+
+$ ./configure --with-sysrepod=<path-to-sysrepod-repository>
+$ make
+# make install
+
+2. south_client
+
+$ make
+
+
+Running
+~~~~~~~
+
+You need 3 separate terminals:
+
+1. sysrepod
+
+(start sysrepod with default options - no argument needed)
+
+2. south_client
+
+$ ./sysrepod_ifc_daemon
+
+3. noth_client
+
+# netopeer-sysrepo
+
+
+Now you can connect to netopeer-sysrepo, it
+acts as a standard NETCONF server.

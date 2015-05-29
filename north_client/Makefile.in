@@ -52,11 +52,10 @@ libdir =  @libdir@
 mandir = @mandir@
 sysconfdir = @sysconfdir@
 modulesdir = @MODULESDIR@
-sysrepoifcdir = ${prefix}/var/sysrepo_ifc/
 
 TOPDIR = @CONFIGURE_PWD@
 #if you edit this path, edit also configurator/config.py.in path
-CFGDIR = $(DESTDIR)/$(sysconfdir)/netopeer
+CFGDIR = $(DESTDIR)/$(sysconfdir)/netopeer_sysrepo
 CC = @CC@
 RPMBUILD = @RPMBUILD@
 INSTALL = @INSTALL@
@@ -66,8 +65,8 @@ INSTALL_DATA_PRIVATE = @INSTALL@ -m 600
 
 RPMDIR = RPMBUILD
 
-SERVER = netopeer-server
-SERVER_LIBS = ../libsrd.a @SERVER_LIBS@
+SERVER = netopeer-sysrepo
+SERVER_LIBS = @SERVER_LIBS@
 SERVER_SRCS =  src/server.c \
 	src/cfgnetopeer_transapi.c \
 	src/netconf_server_transapi.c \
@@ -88,19 +87,18 @@ LNC_STATIC_SRCS = edit_config.c \
 	with_defaults.c
 LNC_STATIC_OBJS = $(LNC_STATIC_SRCS:%.c=src/libnetconf/$(OBJDIR)/%.o)
 
-MANAGER_SRCS = manager/netopeer-manager.in
-
 CONFIGURATOR_SRCS = configurator/setup.py \
 	configurator/netopeer-configurator \
 	configurator/netopeer/*.py \
 	configurator/netopeer/*.py.in
+
+LIBSRD = @SYSREPOD_PATH@/libsrd.a
 
 CFLAGS = @CFLAGS@
 CPPFLAGS = @CPPFLAGS@
 DEFINE = -DBINDIR=\"$(BINDIR)\" -DCFG_DIR=\"$(CFGDIR)\" -DMODULES_CFG_DIR=\"$(DESTDIR)/$(modulesdir)/\" -DVERSION=\"$(VERSION)\"
 
 OBJDIR= .obj
-TOOLS = manager/netopeer-manager
 PYTOOLS = configurator/netopeer-configurator
 
 CFGS =	config/netopeer-cfgnetopeer.yin \
@@ -116,6 +114,7 @@ CFGS =	config/netopeer-cfgnetopeer.yin \
 	@SERVER_TLS_CFGS@
 
 SYSREPO_CFGS = ietf-interfaces.yin \
+	ietf-interfaces.yang \
 	iana-if-type.yin \
 	ietf-interfaces-config.rng \
 	ietf-interfaces-gdefs-config.rng \
@@ -127,21 +126,7 @@ CFGS_TAR = $(CFGS) \
 	config/Netopeer.xml.in \
 	config/NETCONF-server.xml.in \
 	config/Netopeer.xml.in \
-	src/config.h.in
-
-MANPAGES = manager/netopeer-manager.1 \
-	netopeer-server.8 \
-	configurator/netopeer-configurator.1
-
-MANHTMLS = $(MANPAGES:%=%.html)
-
-MANPATH=$(DESTDIR)$(mandir)/man$(subst .,,$(suffix $(1)))
-define MANINSTALL
-[ -d $(call MANPATH,$(1)) ] || \
-	(mkdir -p $(call MANPATH,$(1)); \
-	chmod 755 $(call MANPATH,$(1))); \
-$(INSTALL_DATA) $(1) $(call MANPATH,$(1))/;
-endef
+	src/config.h.inf
 
 define PYINSTALL
 cd $(dir $(1)); \
@@ -154,32 +139,15 @@ define EXPAND
 sed -e 's|$${prefix}|$(prefix)|g' $(1) > $(2);
 endef
 
-all: $(SERVER) $(TOOLS)
+all: $(SERVER)
 
 $(SERVER_MODULES_CONF): $(SERVER_MODULES_CONF:%=%.tmp)
 	$(call EXPAND,$(@:%=%.tmp),$@)
 
-%.1.html: %.1
-	@if [ "@ROFF2HTML@" = "no" ]; then \
-		echo "Missing roff2html"; \
-	else \
-		@ROFF2HTML@ $< > $@; \
-	fi
-
-%.8.html: %.8
-	@if [ "@ROFF2HTML@" = "no" ]; then \
-		echo "Missing roff2html"; \
-	else \
-		@ROFF2HTML@ $< > $@; \
-	fi
 
 $(SERVER): $(SERVER_OBJS) $(LNC_STATIC_OBJS) $(SERVER_MODULES_CONF)
 	@rm -f $@;
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(SERVER_OBJS) $(SERVER_LIBS) $(LNC_STATIC_OBJS) -o $@;
-
-manager/netopeer-manager: manager/netopeer-manager.tmp
-	$(call EXPAND,$<,$@)
-	chmod +x $@
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(SERVER_OBJS) $(SERVER_LIBS) $(LNC_STATIC_OBJS) $(LIBSRD) -o $@;
 
 $(OBJDIR)/%.o: %.c
 	@[ -d $(dir $@) ] || \
@@ -193,47 +161,12 @@ src/libnetconf/$(OBJDIR)/%.o: src/libnetconf/%.c
 
 .PHONY: clean
 clean:
-	rm -rf $(SERVER) $(TOOLS) $(OBJDIR) src/libnetconf/$(OBJDIR)
-
-.PHONY: doc
-doc: $(MANHTMLS)
-
-.PHONY: dist
-dist: $(NAME).spec tarball rpm
-
-.PHONY: tarball
-tarball: $(SERVER_SRCS) $(SERVER_HDRS) $(MANHTMLS)
-	@rm -rf $(NAME)-$(VERSION);
-	@mkdir $(NAME)-$(VERSION);
-	@for i in $(SERVER_SRCS) $(COMMON_SRCS) $(SERVER_HDRS) $(CFGS_TAR) $(SERVER_HDRS_TAR) configure.in configure \
-	    Makefile.in VERSION $(NAME).spec.in netopeer.rc.in install-sh $(MANPAGES) $(MANHTMLS) config.sub config.guess $(MANAGER_SRCS) $(CONFIGURATOR_SRCS); do \
-	    [ -d $(NAME)-$(VERSION)/$$(dirname $$i) ] || (mkdir -p $(NAME)-$(VERSION)/$$(dirname $$i)); \
-		cp $$i $(NAME)-$(VERSION)/$$i; \
-	done;
-	@rm -rf $(RPMDIR)/SOURCES/; \
-	mkdir -p $(RPMDIR)/SOURCES/; \
-	tar -c -z -f $(RPMDIR)/SOURCES/$(NAME)-$(VERSION)-$(RELEASE).tar.gz \
-	    $(NAME)-$(VERSION); \
-	rm -rf $(NAME)-$(VERSION);
-
-.PHONY: rpm
-rpm: tarball
-	mkdir -p $(RPMDIR)/BUILD $(RPMDIR)/RPMS $(RPMDIR)/SRPMS
-	$(RPMBUILD) -ba $(NAME).spec \
-		--define "_topdir `pwd`/$(RPMDIR)";
-
-.PHONY: cleanall
-cleanall: clean distclean
-
-.PHONY: distclean
-distclean:
-	rm -rf $(RPMDIR)
+	rm -rf $(SERVER) $(OBJDIR) src/libnetconf/$(OBJDIR)
 
 .PHONY: install
-install: $(SERVER) $(TOOLS) $(CFGS) $(MANPAGES) $(MANHTMLS)
+install: $(SERVER) $(CFGS)
 	$(INSTALL) -d $(DESTDIR)/$(bindir);
 	$(INSTALL_PROGRAM) $(SERVER) $(DESTDIR)/$(bindir)/;
-	$(INSTALL_PROGRAM) $(TOOLS) $(DESTDIR)/$(bindir)/;
 	if test "@NPCONF@" = "yes"; then \
 		$(foreach tool,$(PYTOOLS),$(call PYINSTALL,$(tool),$(DESTDIR)$(prefix))) \
 	fi
@@ -245,17 +178,10 @@ install: $(SERVER) $(TOOLS) $(CFGS) $(MANPAGES) $(MANHTMLS)
 	for i in $(CFGS); do \
 		$(INSTALL_DATA_PRIVATE) $$i $(CFGDIR)/cfgnetopeer/; \
 	done
-	$(INSTALL) -d $(sysrepoifcdir)
+	$(INSTALL) -d $(CFGDIR)/sysrepo_ifc/
 	for i in $(SYSREPO_CFGS); do \
-		$(INSTALL_DATA_PRIVATE) $$i $(sysrepoifcdir); \
+		$(INSTALL_DATA_PRIVATE) $$i $(CFGDIR)/sysrepo_ifc/; \
 	done
 	$(INSTALL) -d $(DESTDIR)/$(sysconfdir)/init.d/;
 	$(INSTALL_PROGRAM) -m 755 netopeer.rc $(DESTDIR)/$(sysconfdir)/init.d/
-	$(foreach man,$(MANPAGES),$(call MANINSTALL,$(man)))
-	if test -n "$(MANHTMLS)"; then \
-		[ -d $(DESTDIR)/$(datarootdir)/netopeer/ ] || \
-			(mkdir -p $(DESTDIR)/$(datarootdir)/netopeer/; chmod 755 $(DESTDIR)/$(datarootdir)/netopeer/); \
-	fi
-	$(foreach man,$(MANHTMLS),$(INSTALL_DATA) $(man) $(DESTDIR)/$(datarootdir)/netopeer/;)
-
 

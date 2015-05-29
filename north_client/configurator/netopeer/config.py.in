@@ -16,7 +16,7 @@ paths = {
 		'libdir' : '@libdir@',\
 		'mandir' : '@mandir@',\
 		'sysconfdir': '@sysconfdir@',\
-		'cfgdir': '@sysconfdir@/netopeer',\
+		'cfgdir': '@sysconfdir@/netopeer_sysrepo',\
 		'modulesdir':'@MODULESDIR@',\
 	}
 
