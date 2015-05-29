@@ -11,8 +11,8 @@
 #include <assert.h>
 
 #include <libnetconf_xml.h>
+#include <srd.h>
 
-#include "../../srd.h"
 #include "config.h"
 
 /* transAPI version which must be compatible with libnetconf */

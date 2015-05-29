@@ -795,14 +795,14 @@ restart:
 	}
 
 	/* prepare the sysrepo module */
-	sysrepo_ds = ncds_new_transapi_static(NCDS_TYPE_CUSTOM, NP_SYSREPO_IFC_DIR "/ietf-interfaces.yin", &sysrepo_transapi);
+	sysrepo_ds = ncds_new_transapi_static(NCDS_TYPE_CUSTOM, CFG_DIR "/sysrepo_ifc/ietf-interfaces.yin", &sysrepo_transapi);
 	if (sysrepo_ds == NULL) {
 		nc_verb_error("Creating sysrepo ifc datastore failed.");
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
 		return EXIT_FAILURE;
 	}
-	if (ncds_add_model(NP_SYSREPO_IFC_DIR "/iana-if-type.yin") != 0) {
+	if (ncds_add_model(CFG_DIR "/sysrepo_ifc/iana-if-type.yin") != 0) {
 		nc_verb_error("Adding iana-if-type model failed.");
 		ncds_free(sysrepo_ds);
 		module_disable(server_module, 1);

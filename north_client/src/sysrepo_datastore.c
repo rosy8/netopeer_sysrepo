@@ -7,8 +7,8 @@
 #include <errno.h>
 
 #include <libnetconf.h>
+#include <srd.h>
 
-#include "../../srd.h"
 #include "libnetconf/edit_config.h"
 #include "config.h"
 
@@ -92,8 +92,8 @@ int sysrepo_init(void* UNUSED(data)) {
 	gds_cand = xmlReadMemory(aux, strlen(aux), NULL, NULL, XML_READ_OPT);
 	free(aux);
 
-	if (eaccess(NP_SYSREPO_IFC_DIR "/startup.xml", R_OK) != -1) {
-		gds_startup = xmlReadFile(NP_SYSREPO_IFC_DIR "/startup.xml", NULL, XML_READ_OPT);
+	if (eaccess(CFG_DIR "/sysrepo_ifc/startup.xml", R_OK) != -1) {
+		gds_startup = xmlReadFile(CFG_DIR "/sysrepo_ifc/startup.xml", NULL, XML_READ_OPT);
 		if (gds_startup == NULL) {
 			nc_verb_warning("Could not parse sysrepo ifc startup config.");
 		}
@@ -122,7 +122,7 @@ void sysrepo_free(void* UNUSED(data)) {
 		sysrepo_fd = -1;
 	}
 
-	startup_file = fopen(NP_SYSREPO_IFC_DIR "/startup.xml", "w");
+	startup_file = fopen(CFG_DIR "/sysrepo_ifc/startup.xml", "w");
 	if (startup_file == NULL) {
 		nc_verb_warning("Failed to store startup config (%s).", strerror(errno));
 	} else {

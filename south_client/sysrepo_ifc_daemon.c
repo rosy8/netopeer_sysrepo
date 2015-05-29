@@ -8,10 +8,10 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#include "../sysrepo_config.h"
-#include "../srd.h"
+#include <srd.h>
 
 #define MSGLENFIELDWIDTH 7
+#define NP_SYSREPO_IFC_DS "urn:ietf:params:xml:ns:yang:ietf-interfaces"
 
 void createListeningSocket(int* listenfd, int myPort) {
 	const int optVal = 1;
@@ -71,7 +71,7 @@ void signal_handler(int sig) {
 	}
 }
 
-int main() {
+int main(void) {
 	struct sigaction action;
 	sigset_t block_mask;
 
@@ -124,7 +124,7 @@ int main() {
 	}
 
 	if (strstr(ds_list, NP_SYSREPO_IFC_DS "/interfaces") == NULL) {
-		if (srd_createDataStore(sockfd, NP_SYSREPO_IFC_DS "/interfaces", "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\"/></data>", NP_SYSREPO_IFC_DIR, NP_SYSREPO_IFC_DIR) != 1) {
+		if (srd_createDataStore(sockfd, NP_SYSREPO_IFC_DS "/interfaces", "<data xmlns=\"urn:ietf:params:xml:ns:netconf:base:1.0\"><interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\"/></data>", CHECK_DIR, CHECK_DIR) != 1) {
 			printf("Failed to create a datastore\n");
 			srd_disconnect(sockfd);
 			return EXIT_FAILURE;
