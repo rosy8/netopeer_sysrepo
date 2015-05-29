@@ -144,6 +144,7 @@ struct ns_pair sysrepo_namespace_mapping[] = {
 };
 
 static char* ifc_name;
+static int parent_add_remove;
 
 /*
 * CONFIGURATION callbacks
@@ -154,6 +155,7 @@ static char* ifc_name;
 int callback_if_interfaces(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr UNUSED(new_node), struct nc_err** error) {
 	free(ifc_name);
 	ifc_name = NULL;
+	parent_add_remove = 0;
 
 	if (op & XMLDIFF_REM) {
 		if (srd_deleteNodes(sysrepo_fd, "/*[local-name()='data']/*[local-name()='interfaces']") == -1) {
@@ -174,6 +176,7 @@ int callback_if_interfaces(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED
 int callback_if_interfaces_if_interface(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err** error) {
 	int ret;
 	xmlNodePtr node;
+	xmlBufferPtr buf;
 	char* aux;
 
 	for (node = (old_node == NULL ? new_node->children : old_node->children); node != NULL; node = node->next) {
@@ -189,6 +192,7 @@ int callback_if_interfaces_if_interface(void** UNUSED(data), XMLDIFF_OP op, xmlN
 	}
 
 	if (op & XMLDIFF_REM) {
+		parent_add_remove = 1;
 		asprintf(&aux, "/*[local-name()='data']/*[local-name()='interfaces']/*[local-name()='interface' and name='%s']", ifc_name);
 		ret = srd_deleteNodes(sysrepo_fd, aux);
 		free(aux);
@@ -198,7 +202,12 @@ int callback_if_interfaces_if_interface(void** UNUSED(data), XMLDIFF_OP op, xmlN
 			return EXIT_FAILURE;
 		}
 	} else if (op & XMLDIFF_ADD) {
-		asprintf(&aux, "<interface><name>%s</name></interface>", ifc_name);
+		parent_add_remove = 1;
+		buf = xmlBufferCreate();
+		xmlNodeDump(buf, new_node->doc, new_node, 1, 1);
+		aux = strdup((char*)xmlBufferContent(buf));
+		xmlBufferFree(buf);
+
 		ret = srd_addNodes(sysrepo_fd, "/*[local-name()='data']/*[local-name()='interfaces']", aux);
 		free(aux);
 		if (ret == -1) {
@@ -215,6 +224,10 @@ int callback_if_interfaces_if_interface_if_description(void** UNUSED(data), XMLD
 	char* aux, *aux2;
 
 	assert(ifc_name);
+
+	if (parent_add_remove) {
+		return EXIT_SUCCESS;
+	}
 
 	if (op & XMLDIFF_REM) {
 		asprintf(&aux, "/*[local-name()='data']/*[local-name()='interfaces']/*[local-name()='interface' and name='%s']/*[local-name()='description']", ifc_name);
@@ -258,6 +271,10 @@ int callback_if_interfaces_if_interface_if_type(void** UNUSED(data), XMLDIFF_OP 
 
 	assert(ifc_name);
 
+	if (parent_add_remove) {
+		return EXIT_SUCCESS;
+	}
+
 	if (op & XMLDIFF_REM) {
 		asprintf(&aux, "/*[local-name()='data']/*[local-name()='interfaces']/*[local-name()='interface' and name='%s']/*[local-name()='type']", ifc_name);
 		ret = srd_deleteNodes(sysrepo_fd, aux);
@@ -300,6 +317,10 @@ int callback_if_interfaces_if_interface_if_enabled(void** UNUSED(data), XMLDIFF_
 
 	assert(ifc_name);
 
+	if (parent_add_remove) {
+		return EXIT_SUCCESS;
+	}
+
 	if (op & XMLDIFF_REM) {
 		asprintf(&aux, "/*[local-name()='data']/*[local-name()='interfaces']/*[local-name()='interface' and name='%s']/*[local-name()='enabled']", ifc_name);
 		ret = srd_deleteNodes(sysrepo_fd, aux);
@@ -341,6 +362,10 @@ int callback_if_interfaces_if_interface_if_link_up_down_trap_enable(void** UNUSE
 	char* aux, *aux2;
 
 	assert(ifc_name);
+
+	if (parent_add_remove) {
+		return EXIT_SUCCESS;
+	}
 
 	if (op & XMLDIFF_REM) {
 		asprintf(&aux, "/*[local-name()='data']/*[local-name()='interfaces']/*[local-name()='interface' and name='%s']/*[local-name()='link-up-down-trap-enable']", ifc_name);
