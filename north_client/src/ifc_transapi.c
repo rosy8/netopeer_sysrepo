@@ -144,7 +144,7 @@ struct ns_pair ifc_namespace_mapping[] = {
 };
 
 static char* ifc_name;
-static int parent_add_remove;
+static int parent_add_remove, top_container_add_remove;
 
 /*
 * CONFIGURATION callbacks
@@ -156,14 +156,17 @@ int callback_if_interfaces(void** UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED
 	free(ifc_name);
 	ifc_name = NULL;
 	parent_add_remove = 0;
+	top_container_add_remove = 0;
 
 	if (op & XMLDIFF_REM) {
+		top_container_add_remove = 1;
 		if (srd_deleteNodes(sysrepo_fd, "/*[local-name()='data']/*[local-name()='interfaces']") == -1) {
 			*error = nc_err_new(NC_ERR_OP_FAILED);
 			nc_err_set(*error, NC_ERR_PARAM_MSG, "Failed to delete \"interfaces\" from sysrepo ifc datastore.");
 			return EXIT_FAILURE;
 		}
 	} else if (op & XMLDIFF_ADD) {
+		top_container_add_remove = 1;
 		if (srd_addNodes(sysrepo_fd, "/*[local-name()='data']", "<interfaces xmlns=\"urn:ietf:params:xml:ns:yang:ietf-interfaces\"/>") == -1) {
 			*error = nc_err_new(NC_ERR_OP_FAILED);
 			nc_err_set(*error, NC_ERR_PARAM_MSG, "Failed to add \"interfaces\" to sysrepo ifc datastore.");
@@ -178,6 +181,11 @@ int callback_if_interfaces_if_interface(void** UNUSED(data), XMLDIFF_OP op, xmlN
 	xmlNodePtr node;
 	xmlBufferPtr buf;
 	char* aux;
+
+	if (top_container_add_remove) {
+		parent_add_remove = 1;
+		return EXIT_SUCCESS;
+	}
 
 	for (node = (old_node == NULL ? new_node->children : old_node->children); node != NULL; node = node->next) {
 		if (xmlStrEqual(node->name, BAD_CAST "name")) {
