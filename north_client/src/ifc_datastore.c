@@ -415,6 +415,8 @@ int ifc_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE source,
 		}
 		if (!rollbacking) {
 			store_rollback(dst_doc, target);
+		} else {
+			xmlFreeDoc(dst_doc);
 		}
 
 		xmlFreeDoc(gds_run);
