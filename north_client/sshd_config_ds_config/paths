@@ -1,4 +1,5 @@
 ss=urn:ietf:params:xml:ns:yang:ssh:sshd_config
+/ss:sshd_config_options
 /ss:sshd_config_options/ss:AcceptEnv
 /ss:sshd_config_options/ss:AddressFamily
 /ss:sshd_config_options/ss:AllowAgentForwarding

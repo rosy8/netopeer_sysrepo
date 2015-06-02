@@ -3,7 +3,7 @@
  * It contains 3 parts: Configuration callbacks, RPC callbacks and state data callbacks.
  * Do NOT alter function signatures or any structures unless you know exactly what you are doing.
  */
-
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <libxml/tree.h>
 
@@ -88,7 +88,7 @@ void sshdc_transapi_close(void) {
  * @param[out] err  Double pointer to error structure. Fill error when some occurs.
  * @return State data as libxml2 xmlDocPtr or NULL in case of error.
  */
-xmlDocPtr sshdc_get_state_data(xmlDocPtr model, xmlDocPtr running, struct nc_err **err) {
+xmlDocPtr sshdc_get_state_data(xmlDocPtr UNUSED(model), xmlDocPtr UNUSED(running), struct nc_err **UNUSED(err)) {
 	return(NULL);
 }
 /*
@@ -97,11 +97,109 @@ xmlDocPtr sshdc_get_state_data(xmlDocPtr model, xmlDocPtr running, struct nc_err
  */
 struct ns_pair sshdc_namespace_mapping[] = {{"ss", "urn:ietf:params:xml:ns:yang:ssh:sshd_config"}, {NULL, NULL}};
 
+static int top_add_remove;
+
+int callback_master(void **UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr new_node, struct nc_err **error, const char* caller_func) {
+	char* aux;
+	const char* node_name = strrchr(caller_func, '_')+1;
+	int ret;
+
+	if (top_add_remove) {
+		return EXIT_SUCCESS;
+	}
+
+	if (op & XMLDIFF_REM) {
+		asprintf(&aux, "/*[local-name()='config']/*[local-name()='sshd_config_options']/*[local-name()='%s']", node_name);
+		ret = srd_deleteNodes(sysrepo_fd, aux);
+		free(aux);
+
+		if (ret == -1) {
+			asprintf(&aux, "Failed to delete \"%s\" from sysrepo sshd config datastore.", node_name);
+			nc_verb_error(aux);
+			*error = nc_err_new(NC_ERR_OP_FAILED);
+			nc_err_set(*error, NC_ERR_PARAM_MSG, aux);
+			free(aux);
+			return EXIT_FAILURE;
+		}
+	} else if (op & XMLDIFF_ADD) {
+		asprintf(&aux, "<%s>%s</%s>", node_name, (char*)new_node->children->content, node_name);
+		ret = srd_addNodes(sysrepo_fd, "/*[local-name()='config']/*[local-name()='sshd_config_options']", aux);
+		free(aux);
+
+		if (ret == -1) {
+			asprintf(&aux, "Failed to add \"%s\" to sysrepo sshd config datastore.", node_name);
+			nc_verb_error(aux);
+			*error = nc_err_new(NC_ERR_OP_FAILED);
+			nc_err_set(*error, NC_ERR_PARAM_MSG, aux);
+			free(aux);
+			return EXIT_FAILURE;
+		}
+	} else if (op & XMLDIFF_MOD) {
+		asprintf(&aux, "/*[local-name()='config']/*[local-name()='sshd_config_options']/*[local-name()='%s']", node_name);
+		ret = srd_updateNodes(sysrepo_fd, aux, (char*)new_node->children->content);
+		free(aux);
+
+		if (ret == -1) {
+			asprintf(&aux, "Failed to update \"%s\" in sysrepo sshd config datastore.", node_name);
+			nc_verb_error(aux);
+			*error = nc_err_new(NC_ERR_OP_FAILED);
+			nc_err_set(*error, NC_ERR_PARAM_MSG, aux);
+			free(aux);
+			return EXIT_FAILURE;
+		}
+	}
+	return EXIT_SUCCESS;
+}
+
 /*
  * CONFIGURATION callbacks
  * Here follows set of callback functions run every time some change in associated part of running datastore occurs.
  * You can safely modify the bodies of all function as well as add new functions for better lucidity of code.
  */
+
+/**
+ * @brief This callback will be run when node in path /ss:sshd_config_options changes
+ *
+ * @param[in] data	Double pointer to void. Its passed to every callback. You can share data using it.
+ * @param[in] op	Observed change in path. XMLDIFF_OP type.
+ * @param[in] old_node	Old configuration node. If op == XMLDIFF_ADD, it is NULL.
+ * @param[in] new_node	New configuration node. if op == XMLDIFF_REM, it is NULL.
+ * @param[out] error	If callback fails, it can return libnetconf error structure with a failure description.
+ *
+ * @return EXIT_SUCCESS or EXIT_FAILURE
+ */
+/* !DO NOT ALTER FUNCTION SIGNATURE! */
+int callback_ss_sshd_config_options(void **UNUSED(data), XMLDIFF_OP op, xmlNodePtr UNUSED(old_node), xmlNodePtr new_node, struct nc_err **error) {
+	int ret;
+	xmlBufferPtr buf;
+	char* aux;
+
+	top_add_remove = 0;
+
+	if (op & XMLDIFF_REM) {
+		top_add_remove = 1;
+		if (srd_deleteNodes(sysrepo_fd, "/*[local-name()='config']/*[local-name()='sshd_config_options']") == -1) {
+			*error = nc_err_new(NC_ERR_OP_FAILED);
+			nc_err_set(*error, NC_ERR_PARAM_MSG, "Failed to delete \"sshd_config_options\" from sysrepo sshd config datastore.");
+			return EXIT_FAILURE;
+		}
+	} else if (op & XMLDIFF_ADD) {
+		top_add_remove = 1;
+		buf = xmlBufferCreate();
+		xmlNodeDump(buf, new_node->doc, new_node, 1, 1);
+		aux = strdup((char*)xmlBufferContent(buf));
+		xmlBufferFree(buf);
+
+		ret = srd_addNodes(sysrepo_fd, "/*[local-name()='config']", aux);
+		free(aux);
+		if (ret == -1) {
+			*error = nc_err_new(NC_ERR_OP_FAILED);
+			nc_err_set(*error, NC_ERR_PARAM_MSG, "Failed to add \"sshd_config_options\" to sysrepo sshd config datastore.");
+			return EXIT_FAILURE;
+		}
+	}
+	return EXIT_SUCCESS;
+}
 
 /**
  * @brief This callback will be run when node in path /ss:sshd_config_options/ss:AcceptEnv changes
@@ -116,7 +214,7 @@ struct ns_pair sshdc_namespace_mapping[] = {{"ss", "urn:ietf:params:xml:ns:yang:
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AcceptEnv(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -132,7 +230,7 @@ int callback_ss_sshd_config_options_ss_AcceptEnv(void **data, XMLDIFF_OP op, xml
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AddressFamily(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -148,7 +246,7 @@ int callback_ss_sshd_config_options_ss_AddressFamily(void **data, XMLDIFF_OP op,
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AllowAgentForwarding(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -164,7 +262,7 @@ int callback_ss_sshd_config_options_ss_AllowAgentForwarding(void **data, XMLDIFF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AllowGroups(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -180,7 +278,7 @@ int callback_ss_sshd_config_options_ss_AllowGroups(void **data, XMLDIFF_OP op, x
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AllowTcpForwarding(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -196,7 +294,7 @@ int callback_ss_sshd_config_options_ss_AllowTcpForwarding(void **data, XMLDIFF_O
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AllowUsers(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -212,7 +310,7 @@ int callback_ss_sshd_config_options_ss_AllowUsers(void **data, XMLDIFF_OP op, xm
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AuthenticationMethods(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -228,7 +326,7 @@ int callback_ss_sshd_config_options_ss_AuthenticationMethods(void **data, XMLDIF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AuthorizedKeysCommand(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -244,7 +342,7 @@ int callback_ss_sshd_config_options_ss_AuthorizedKeysCommand(void **data, XMLDIF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AuthorizedKeysCommandUser(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -260,7 +358,7 @@ int callback_ss_sshd_config_options_ss_AuthorizedKeysCommandUser(void **data, XM
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AuthorizedKeysFile(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -276,7 +374,7 @@ int callback_ss_sshd_config_options_ss_AuthorizedKeysFile(void **data, XMLDIFF_O
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_AuthorizedPrincipalsFile(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -292,7 +390,7 @@ int callback_ss_sshd_config_options_ss_AuthorizedPrincipalsFile(void **data, XML
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_Banner(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -308,7 +406,7 @@ int callback_ss_sshd_config_options_ss_Banner(void **data, XMLDIFF_OP op, xmlNod
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_ChallengeResponseAuthentication(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -324,7 +422,7 @@ int callback_ss_sshd_config_options_ss_ChallengeResponseAuthentication(void **da
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_ChrootDirectory(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -340,7 +438,7 @@ int callback_ss_sshd_config_options_ss_ChrootDirectory(void **data, XMLDIFF_OP o
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_Ciphers(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -356,7 +454,7 @@ int callback_ss_sshd_config_options_ss_Ciphers(void **data, XMLDIFF_OP op, xmlNo
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_ClientAliveCountMax(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -372,7 +470,7 @@ int callback_ss_sshd_config_options_ss_ClientAliveCountMax(void **data, XMLDIFF_
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_ClientAliveInterval(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -388,7 +486,7 @@ int callback_ss_sshd_config_options_ss_ClientAliveInterval(void **data, XMLDIFF_
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_Compression(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -404,7 +502,7 @@ int callback_ss_sshd_config_options_ss_Compression(void **data, XMLDIFF_OP op, x
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_DebianBanner(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -420,7 +518,7 @@ int callback_ss_sshd_config_options_ss_DebianBanner(void **data, XMLDIFF_OP op, 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_DenyGroups(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -436,7 +534,7 @@ int callback_ss_sshd_config_options_ss_DenyGroups(void **data, XMLDIFF_OP op, xm
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_DenyUsers(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -452,7 +550,7 @@ int callback_ss_sshd_config_options_ss_DenyUsers(void **data, XMLDIFF_OP op, xml
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_ForceCommand(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -468,7 +566,7 @@ int callback_ss_sshd_config_options_ss_ForceCommand(void **data, XMLDIFF_OP op, 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_GatewayPorts(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -484,7 +582,7 @@ int callback_ss_sshd_config_options_ss_GatewayPorts(void **data, XMLDIFF_OP op, 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_GSSAPIAuthentication(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -500,7 +598,7 @@ int callback_ss_sshd_config_options_ss_GSSAPIAuthentication(void **data, XMLDIFF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_GSSAPIKeyExchange(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -516,7 +614,7 @@ int callback_ss_sshd_config_options_ss_GSSAPIKeyExchange(void **data, XMLDIFF_OP
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_GSSAPICleanupCredentials(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -532,7 +630,7 @@ int callback_ss_sshd_config_options_ss_GSSAPICleanupCredentials(void **data, XML
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_GSSAPIStrictAcceptorCheck(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -548,7 +646,7 @@ int callback_ss_sshd_config_options_ss_GSSAPIStrictAcceptorCheck(void **data, XM
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_GSSAPIStoreCredentialsOnRekey(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -564,7 +662,7 @@ int callback_ss_sshd_config_options_ss_GSSAPIStoreCredentialsOnRekey(void **data
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_HostbasedAuthentication(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -580,7 +678,7 @@ int callback_ss_sshd_config_options_ss_HostbasedAuthentication(void **data, XMLD
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_HostbasedUsesNameFromPacketOnly(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -596,7 +694,7 @@ int callback_ss_sshd_config_options_ss_HostbasedUsesNameFromPacketOnly(void **da
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_HostCertificate(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -612,7 +710,7 @@ int callback_ss_sshd_config_options_ss_HostCertificate(void **data, XMLDIFF_OP o
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_HostKey(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -628,7 +726,7 @@ int callback_ss_sshd_config_options_ss_HostKey(void **data, XMLDIFF_OP op, xmlNo
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_HostKeyAgent(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -644,7 +742,7 @@ int callback_ss_sshd_config_options_ss_HostKeyAgent(void **data, XMLDIFF_OP op, 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_IgnoreRhosts(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -660,7 +758,7 @@ int callback_ss_sshd_config_options_ss_IgnoreRhosts(void **data, XMLDIFF_OP op, 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_IgnoreUserKnownHosts(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -676,7 +774,7 @@ int callback_ss_sshd_config_options_ss_IgnoreUserKnownHosts(void **data, XMLDIFF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_IPQoS(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -692,7 +790,7 @@ int callback_ss_sshd_config_options_ss_IPQoS(void **data, XMLDIFF_OP op, xmlNode
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_KbdInteractiveAuthentication(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -708,7 +806,7 @@ int callback_ss_sshd_config_options_ss_KbdInteractiveAuthentication(void **data,
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_KerberosAuthentication(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -724,7 +822,7 @@ int callback_ss_sshd_config_options_ss_KerberosAuthentication(void **data, XMLDI
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_KerberosGetAFSToken(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -740,7 +838,7 @@ int callback_ss_sshd_config_options_ss_KerberosGetAFSToken(void **data, XMLDIFF_
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_KerberosOrLocalPasswd(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -756,7 +854,7 @@ int callback_ss_sshd_config_options_ss_KerberosOrLocalPasswd(void **data, XMLDIF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_KerberosTicketCleanup(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -772,7 +870,7 @@ int callback_ss_sshd_config_options_ss_KerberosTicketCleanup(void **data, XMLDIF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_KexAlgorithms(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -788,7 +886,7 @@ int callback_ss_sshd_config_options_ss_KexAlgorithms(void **data, XMLDIFF_OP op,
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_KeyRegenerationInterval(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -804,7 +902,7 @@ int callback_ss_sshd_config_options_ss_KeyRegenerationInterval(void **data, XMLD
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_ListenAddress(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -820,7 +918,7 @@ int callback_ss_sshd_config_options_ss_ListenAddress(void **data, XMLDIFF_OP op,
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_LoginGraceTime(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -836,7 +934,7 @@ int callback_ss_sshd_config_options_ss_LoginGraceTime(void **data, XMLDIFF_OP op
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_LogLevel(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -852,7 +950,7 @@ int callback_ss_sshd_config_options_ss_LogLevel(void **data, XMLDIFF_OP op, xmlN
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_MACs(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -868,7 +966,7 @@ int callback_ss_sshd_config_options_ss_MACs(void **data, XMLDIFF_OP op, xmlNodeP
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_Match(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -884,7 +982,7 @@ int callback_ss_sshd_config_options_ss_Match(void **data, XMLDIFF_OP op, xmlNode
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_MaxAuthTries(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -900,7 +998,7 @@ int callback_ss_sshd_config_options_ss_MaxAuthTries(void **data, XMLDIFF_OP op, 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_MaxSessions(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -916,7 +1014,7 @@ int callback_ss_sshd_config_options_ss_MaxSessions(void **data, XMLDIFF_OP op, x
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_MaxStartups(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -932,7 +1030,7 @@ int callback_ss_sshd_config_options_ss_MaxStartups(void **data, XMLDIFF_OP op, x
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_OS(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -948,7 +1046,7 @@ int callback_ss_sshd_config_options_ss_OS(void **data, XMLDIFF_OP op, xmlNodePtr
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PasswordAuthentication(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -964,7 +1062,7 @@ int callback_ss_sshd_config_options_ss_PasswordAuthentication(void **data, XMLDI
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PermitEmptyPasswords(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -980,7 +1078,7 @@ int callback_ss_sshd_config_options_ss_PermitEmptyPasswords(void **data, XMLDIFF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PermitOpen(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -996,7 +1094,7 @@ int callback_ss_sshd_config_options_ss_PermitOpen(void **data, XMLDIFF_OP op, xm
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PermitRootLogin(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1012,7 +1110,7 @@ int callback_ss_sshd_config_options_ss_PermitRootLogin(void **data, XMLDIFF_OP o
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PermitTunnel(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1028,7 +1126,7 @@ int callback_ss_sshd_config_options_ss_PermitTunnel(void **data, XMLDIFF_OP op, 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PermitTTY(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1044,7 +1142,7 @@ int callback_ss_sshd_config_options_ss_PermitTTY(void **data, XMLDIFF_OP op, xml
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PermitUserEnvironment(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1060,7 +1158,7 @@ int callback_ss_sshd_config_options_ss_PermitUserEnvironment(void **data, XMLDIF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PidFile(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1076,7 +1174,7 @@ int callback_ss_sshd_config_options_ss_PidFile(void **data, XMLDIFF_OP op, xmlNo
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_Port(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1092,7 +1190,7 @@ int callback_ss_sshd_config_options_ss_Port(void **data, XMLDIFF_OP op, xmlNodeP
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PrintLastLog(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1108,7 +1206,7 @@ int callback_ss_sshd_config_options_ss_PrintLastLog(void **data, XMLDIFF_OP op, 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PrintMotd(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1124,7 +1222,7 @@ int callback_ss_sshd_config_options_ss_PrintMotd(void **data, XMLDIFF_OP op, xml
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_Protocol(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1140,7 +1238,7 @@ int callback_ss_sshd_config_options_ss_Protocol(void **data, XMLDIFF_OP op, xmlN
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_PubkeyAuthentication(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1156,7 +1254,7 @@ int callback_ss_sshd_config_options_ss_PubkeyAuthentication(void **data, XMLDIFF
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_RekeyLimit(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1172,7 +1270,7 @@ int callback_ss_sshd_config_options_ss_RekeyLimit(void **data, XMLDIFF_OP op, xm
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_RevokedKeys(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1188,7 +1286,7 @@ int callback_ss_sshd_config_options_ss_RevokedKeys(void **data, XMLDIFF_OP op, x
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_RhostsRSAAuthentication(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1204,7 +1302,7 @@ int callback_ss_sshd_config_options_ss_RhostsRSAAuthentication(void **data, XMLD
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_RSAAuthentication(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1220,7 +1318,7 @@ int callback_ss_sshd_config_options_ss_RSAAuthentication(void **data, XMLDIFF_OP
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_ServerKeyBits(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1236,7 +1334,7 @@ int callback_ss_sshd_config_options_ss_ServerKeyBits(void **data, XMLDIFF_OP op,
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_StrictModes(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1252,7 +1350,7 @@ int callback_ss_sshd_config_options_ss_StrictModes(void **data, XMLDIFF_OP op, x
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_Subsystem(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1268,7 +1366,7 @@ int callback_ss_sshd_config_options_ss_Subsystem(void **data, XMLDIFF_OP op, xml
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_SyslogFacility(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1284,7 +1382,7 @@ int callback_ss_sshd_config_options_ss_SyslogFacility(void **data, XMLDIFF_OP op
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_TCPKeepAlive(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1300,7 +1398,7 @@ int callback_ss_sshd_config_options_ss_TCPKeepAlive(void **data, XMLDIFF_OP op, 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_TrustedUserCAKeys(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1316,7 +1414,7 @@ int callback_ss_sshd_config_options_ss_TrustedUserCAKeys(void **data, XMLDIFF_OP
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_UseDNS(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1332,7 +1430,7 @@ int callback_ss_sshd_config_options_ss_UseDNS(void **data, XMLDIFF_OP op, xmlNod
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_UseLogin(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1348,7 +1446,7 @@ int callback_ss_sshd_config_options_ss_UseLogin(void **data, XMLDIFF_OP op, xmlN
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_UsePAM(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1364,7 +1462,7 @@ int callback_ss_sshd_config_options_ss_UsePAM(void **data, XMLDIFF_OP op, xmlNod
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_UsePrivilegeSeparation(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1380,7 +1478,7 @@ int callback_ss_sshd_config_options_ss_UsePrivilegeSeparation(void **data, XMLDI
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_VersionAddendum(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1396,7 +1494,7 @@ int callback_ss_sshd_config_options_ss_VersionAddendum(void **data, XMLDIFF_OP o
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_X11DisplayOffset(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1412,7 +1510,7 @@ int callback_ss_sshd_config_options_ss_X11DisplayOffset(void **data, XMLDIFF_OP 
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_X11Forwarding(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1428,7 +1526,7 @@ int callback_ss_sshd_config_options_ss_X11Forwarding(void **data, XMLDIFF_OP op,
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_X11UseLocalhost(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /**
@@ -1444,7 +1542,7 @@ int callback_ss_sshd_config_options_ss_X11UseLocalhost(void **data, XMLDIFF_OP o
  */
 /* !DO NOT ALTER FUNCTION SIGNATURE! */
 int callback_ss_sshd_config_options_ss_XAuthLocation(void **data, XMLDIFF_OP op, xmlNodePtr old_node, xmlNodePtr new_node, struct nc_err **error) {
-	return EXIT_SUCCESS;
+	return callback_master(data, op, old_node, new_node, error, __func__);
 }
 
 /*
@@ -1453,9 +1551,10 @@ int callback_ss_sshd_config_options_ss_XAuthLocation(void **data, XMLDIFF_OP op,
  * DO NOT alter this structure
  */
 struct transapi_data_callbacks sshdc_clbks =  {
-	.callbacks_count = 84,
+	.callbacks_count = 85,
 	.data = NULL,
 	.callbacks = {
+		{.path = "/ss:sshd_config_options", .func = callback_ss_sshd_config_options},
 		{.path = "/ss:sshd_config_options/ss:AcceptEnv", .func = callback_ss_sshd_config_options_ss_AcceptEnv},
 		{.path = "/ss:sshd_config_options/ss:AddressFamily", .func = callback_ss_sshd_config_options_ss_AddressFamily},
 		{.path = "/ss:sshd_config_options/ss:AllowAgentForwarding", .func = callback_ss_sshd_config_options_ss_AllowAgentForwarding},
@@ -1568,7 +1667,7 @@ struct transapi sshdc_transapi = {
     .init = sshdc_transapi_init,
     .close = sshdc_transapi_close,
     .get_state = sshdc_get_state_data,
-    .clbks_order = TRANSAPI_CLBCKS_ORDER_DEFAULT,
+    .clbks_order = TRANSAPI_CLBCKS_ROOT_TO_LEAF,
     .data_clbks = &sshdc_clbks,
     .rpc_clbks = &sshdc_rpc_clbks,
     .ns_mapping = sshdc_namespace_mapping,
