@@ -633,7 +633,6 @@ SERVER_LIBS
 NPCONF
 DISTRO
 LIBNETCONF_DATADIR
-CONFIGURE_PARAMS
 REQS
 BUILDREQS
 LIBOBJS
@@ -663,7 +662,6 @@ CPPFLAGS
 LDFLAGS
 CFLAGS
 CC
-RPMBUILD
 LNCTOOL
 PYANG
 UNAME
@@ -2629,7 +2627,6 @@ fi
 if test "${enable_configurator+set}" = set; then :
   enableval=$enable_configurator; if test "$enableval" = "no"; then
 		NPCONF=no
-		CONFIGURE_PARAMS="$CONFIGURE_PARAMS --disable-configurator"
 	else
 		NPCONF=yes
 	fi
@@ -2645,7 +2642,6 @@ fi
 if test "${enable_ssh+set}" = set; then :
   enableval=$enable_ssh; if test "$enableval" = "no"; then
 		SSH=no
-		CONFIGURE_PARAMS="$CONFIGURE_PARAMS --disable-ssh"
 	else
 		SSH=yes
 	fi
@@ -2664,7 +2660,6 @@ if test "${enable_tls+set}" = set; then :
 		TLS=no
 	else
 		TLS=yes
-		CONFIGURE_PARAMS="$CONFIGURE_PARAMS --enable-tls"
 	fi
 
 else
@@ -2798,7 +2793,6 @@ fi
 if test "${with_libnetconf+set}" = set; then :
   withval=$with_libnetconf; CPPFLAGS="-I$withval/include/ $CPPFLAGS"
 	LIBS="-L$withval/lib/ -Wl,-rpath,$withval/lib $LIBS"
-	CONFIGURE_PARAMS="$CONFIGURE_PARAMS --with-libnetconf=$withval"
 	LIBNETCONF_DATADIR="$withval/share/"
 
 else
@@ -3326,45 +3320,6 @@ $as_echo "no" >&6; }
 
 BUILDREQS="$BUILDREQS python"
 REQS="$REQS python"
-
-# Check for rpmbuild
-# Extract the first word of "rpmbuild", so it can be a program name with args.
-set dummy rpmbuild; ac_word=$2
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
-$as_echo_n "checking for $ac_word... " >&6; }
-if ${ac_cv_prog_RPMBUILD+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  if test -n "$RPMBUILD"; then
-  ac_cv_prog_RPMBUILD="$RPMBUILD" # Let the user override the test.
-else
-as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
-for as_dir in $PATH
-do
-  IFS=$as_save_IFS
-  test -z "$as_dir" && as_dir=.
-    for ac_exec_ext in '' $ac_executable_extensions; do
-  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
-    ac_cv_prog_RPMBUILD="rpmbuild"
-    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
-    break 2
-  fi
-done
-  done
-IFS=$as_save_IFS
-
-fi
-fi
-RPMBUILD=$ac_cv_prog_RPMBUILD
-if test -n "$RPMBUILD"; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $RPMBUILD" >&5
-$as_echo "$RPMBUILD" >&6; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-fi
-
-
 
 # Check for standard programs
 ac_ext=c
@@ -4460,7 +4415,6 @@ if test "${with_libnetconf+set}" = set; then :
   withval=$with_libnetconf; CPPFLAGS="-I$withval/include/ $CPPFLAGS"
         LIBS="-L$withval/lib/ -Wl,-rpath,$withval/lib $LIBS"
         LIBS="-L$withval/lib64/ -Wl,-rpath,$withval/lib64 $LIBS"
-        CONFIGURE_PARAMS="$CONFIGURE_PARAMS --with-libnetconf=$withval"
         LIBNETCONF_DATADIR="$withval/share/"
 
 else
@@ -5872,12 +5826,6 @@ done
 
 
 
-
-
-if test -z "$RPMBUILD"; then
-	{ $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: Due to missing rpmbuild you will not be able to generate RPM package." >&5
-$as_echo "$as_me: WARNING: Due to missing rpmbuild you will not be able to generate RPM package." >&2;}
-fi
 
 ac_config_files="$ac_config_files Makefile"
 

@@ -57,13 +57,10 @@ TOPDIR = @CONFIGURE_PWD@
 #if you edit this path, edit also configurator/config.py.in path
 CFGDIR = $(DESTDIR)/$(sysconfdir)/netopeer_sysrepo
 CC = @CC@
-RPMBUILD = @RPMBUILD@
 INSTALL = @INSTALL@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_DATA_PRIVATE = @INSTALL@ -m 600
-
-RPMDIR = RPMBUILD
 
 SERVER = netopeer-sysrepo
 SERVER_LIBS = @SERVER_LIBS@
@@ -120,13 +117,6 @@ SYSREPO_CFGS = ietf-interfaces.yin \
 	ietf-interfaces-gdefs-config.rng \
 	ietf-interfaces-schematron.xsl
 
-CFGS_TAR = $(CFGS) \
-	config/netopeer-cfgnetopeer.yang \
-	config/ietf-netconf-server.yang \
-	config/Netopeer.xml.in \
-	config/NETCONF-server.xml.in \
-	config/Netopeer.xml.in \
-	src/config.h.inf
 
 define PYINSTALL
 cd $(dir $(1)); \

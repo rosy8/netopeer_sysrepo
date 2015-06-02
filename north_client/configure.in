@@ -125,7 +125,6 @@ AC_ARG_ENABLE([configurator],
 	AC_HELP_STRING([--disable-configurator], [Compile without netopeer-configurator (python not required)]),
 	if test "$enableval" = "no"; then
 		NPCONF=no
-		CONFIGURE_PARAMS="$CONFIGURE_PARAMS --disable-configurator"
 	else
 		NPCONF=yes
 	fi
@@ -138,7 +137,6 @@ AC_ARG_ENABLE([ssh],
 	AC_HELP_STRING([--disable-ssh], [Compile without SSH transport]),
 	if test "$enableval" = "no"; then
 		SSH=no
-		CONFIGURE_PARAMS="$CONFIGURE_PARAMS --disable-ssh"
 	else
 		SSH=yes
 	fi
@@ -154,7 +152,6 @@ AC_ARG_ENABLE([tls],
 		TLS=no
 	else
 		TLS=yes
-		CONFIGURE_PARAMS="$CONFIGURE_PARAMS --enable-tls"
 	fi
 	,
 	TLS=no
@@ -164,7 +161,6 @@ AC_ARG_WITH([libnetconf],
 	AC_HELP_STRING([--with-libnetconf=PATH],[Set explicit installation prefix to the libnetconf library]),
 	[CPPFLAGS="-I$withval/include/ $CPPFLAGS"
 	LIBS="-L$withval/lib/ -Wl,-rpath,$withval/lib $LIBS"
-	CONFIGURE_PARAMS="$CONFIGURE_PARAMS --with-libnetconf=$withval"
 	LIBNETCONF_DATADIR="$withval/share/"
 	],[
 	# get info from pkg-config about installed package
@@ -254,9 +250,6 @@ AX_PYTHON_MODULE(xml, fatal)
 BUILDREQS="$BUILDREQS python"
 REQS="$REQS python"
 
-# Check for rpmbuild
-AC_CHECK_PROG(RPMBUILD, rpmbuild, rpmbuild)
-
 # Check for standard programs
 AC_PROG_CC(clang llvm-gcc gcc)
 AC_PROG_INSTALL
@@ -309,7 +302,6 @@ AC_ARG_WITH([libnetconf],
         [CPPFLAGS="-I$withval/include/ $CPPFLAGS"
         LIBS="-L$withval/lib/ -Wl,-rpath,$withval/lib $LIBS"
         LIBS="-L$withval/lib64/ -Wl,-rpath,$withval/lib64 $LIBS"
-        CONFIGURE_PARAMS="$CONFIGURE_PARAMS --with-libnetconf=$withval"
         LIBNETCONF_DATADIR="$withval/share/"
         ],[
         # get info from pkg-config about installed package
@@ -453,10 +445,8 @@ AC_FUNC_MALLOC
 AC_CHECK_FUNCS([select strdup strerror])
 
 ############################### Set output #####################################
-AC_SUBST(ROFF2HTML)
 AC_SUBST(BUILDREQS)
 AC_SUBST(REQS)
-AC_SUBST(CONFIGURE_PARAMS)
 AC_SUBST(LIBNETCONF_DATADIR)
 AC_SUBST(DISTRO)
 AC_SUBST(NPCONF)
@@ -471,11 +461,6 @@ AC_SUBST(NETOPEER_FEATURES)
 AC_SUBST(SSH)
 AC_SUBST(TLS)
 AC_SUBST(SYSREPOD_PATH)
-
-AC_SUBST(RPMBUILD)
-if test -z "$RPMBUILD"; then
-	AC_MSG_WARN([Due to missing rpmbuild you will not be able to generate RPM package.])
-fi
 
 AC_CONFIG_FILES(Makefile)
 AC_CONFIG_FILES(../south_client/Makefile)
