@@ -157,6 +157,34 @@ AC_ARG_ENABLE([tls],
 	TLS=no
 )
 
+# --enable-sshd-config-ds
+AC_ARG_ENABLE([sshd-config],
+	AC_HELP_STRING([--disable-sshd-config-ds], [Compile without the support for sshd-config datastore]),
+	if test "$enableval" = "no"; then
+		SSHD_CONFIG_DS=no
+	else
+		SSHD_CONFIG_DS=yes
+		CFLAGS="$CFLAGS -DSSHD_CONFIG_DS"
+	fi
+	,
+	# sshd-config is on by default
+	SSHD_CONFIG_DS=yes
+	CFLAGS="$CFLAGS -DSSHD_CONFIG_DS"
+)
+
+# --enable-ifc-ds
+AC_ARG_ENABLE([ifc-ds],
+	AC_HELP_STRING([--enable-ifc-ds], [Compile with the support for demo ifc datastore]),
+	if test "$enableval" = "no"; then
+		IFC_DS=no
+	else
+		IFC_DS=yes
+		CFLAGS="$CFLAGS -DIFC_DS"
+	fi
+	,
+	IFC_DS=no
+)
+
 AC_ARG_WITH([libnetconf],
 	AC_HELP_STRING([--with-libnetconf=PATH],[Set explicit installation prefix to the libnetconf library]),
 	[CPPFLAGS="-I$withval/include/ $CPPFLAGS"
@@ -461,6 +489,8 @@ AC_SUBST(NETOPEER_FEATURES)
 AC_SUBST(SSH)
 AC_SUBST(TLS)
 AC_SUBST(SYSREPOD_PATH)
+AC_SUBST(SSHD_CONFIG_DS)
+AC_SUBST(IFC_DS)
 
 AC_CONFIG_FILES(Makefile)
 AC_CONFIG_FILES(../south_client/Makefile)

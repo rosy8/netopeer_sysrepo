@@ -60,6 +60,7 @@
 #include <syslog.h>
 
 #include <libnetconf_xml.h>
+#include <srd.h>
 
 #include "libnetconf/datastore_internal.h"
 #include "server.h"
@@ -68,10 +69,13 @@ static const char rcsid[] __attribute__((used)) ="$Id: "__FILE__": "RCSID" $";
 
 extern struct np_options netopeer_options;
 
-extern struct transapi sysrepo_transapi;
-extern struct ncds_custom_funcs sysrepo_funcs;
+#ifdef IFC_DS
+int sysrepo_fd = -1;
 
-struct ncds_ds* sysrepo_ds;
+extern struct transapi ifc_transapi;
+extern struct ncds_custom_funcs ifc_funcs;
+struct ncds_ds* ifc_ds;
+#endif
 
 #ifndef DISABLE_CALLHOME
 extern pthread_mutex_t callhome_lock;
@@ -87,6 +91,8 @@ struct np_state netopeer_state = {
 volatile int quit = 0, restart_soft = 0, restart_hard = 0;
 
 volatile int server_start = 0;
+
+int srd_isServerResponseOK(int sockfd, char** OKcontent);
 
 void clb_print(NC_VERB_LEVEL level, const char* msg) {
 	switch (level) {
@@ -681,7 +687,9 @@ int main(int argc, char** argv) {
 	int daemonize = 0, len;
 	int listen_init = 1;
 	struct np_module* netopeer_module = NULL, *server_module = NULL;
-	ncds_id sysrepo_id;
+#ifdef IFC_DS
+	ncds_id ifc_id;
+#endif
 
 	/* initialize message system and set verbose and debug variables */
 	if ((aux_string = getenv(ENVIRONMENT_VERBOSE)) == NULL) {
@@ -794,9 +802,15 @@ restart:
 		return EXIT_FAILURE;
 	}
 
-	/* prepare the sysrepo module */
-	sysrepo_ds = ncds_new_transapi_static(NCDS_TYPE_CUSTOM, CFG_DIR "/sysrepo_ifc/ietf-interfaces.yin", &sysrepo_transapi);
-	if (sysrepo_ds == NULL) {
+	if (srd_connect(NP_SYSREPO_SERVER_IP, SRD_DEFAULTSERVERPORT, &sysrepo_fd) != 1) {
+		nc_verb_error("Failed to connect to sysrepo on %s:%d", NP_SYSREPO_SERVER_IP, SRD_DEFAULTSERVERPORT);
+		return EXIT_FAILURE;
+	}
+
+#ifdef IFC_DS
+	/* prepare the sysrepo ifc module */
+	ifc_ds = ncds_new_transapi_static(NCDS_TYPE_CUSTOM, CFG_DIR "/sysrepo_ifc/ietf-interfaces.yin", &ifc_transapi);
+	if (ifc_ds == NULL) {
 		nc_verb_error("Creating sysrepo ifc datastore failed.");
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
@@ -804,42 +818,58 @@ restart:
 	}
 	if (ncds_add_model(CFG_DIR "/sysrepo_ifc/iana-if-type.yin") != 0) {
 		nc_verb_error("Adding iana-if-type model failed.");
-		ncds_free(sysrepo_ds);
+		ncds_free(ifc_ds);
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
 		return EXIT_FAILURE;
 	}
-	ncds_custom_set_data(sysrepo_ds, NULL, &sysrepo_funcs);
-	if ((sysrepo_id = ncds_init(sysrepo_ds)) < 0) {
-		nc_verb_error("Initiating sysrepo ifc datastore failed (error code %d).", sysrepo_id);
-		ncds_free(sysrepo_ds);
+	ncds_custom_set_data(ifc_ds, NULL, &ifc_funcs);
+	if ((ifc_id = ncds_init(ifc_ds)) < 0) {
+		nc_verb_error("Initiating sysrepo ifc datastore failed (error code %d).", ifc_id);
+		ncds_free(ifc_ds);
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
 		return EXIT_FAILURE;
 	}
 	if (ncds_consolidate() != 0) {
 		nc_verb_error("Consolidating data models failed.");
-		ncds_free(sysrepo_ds);
+		ncds_free(ifc_ds);
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
 		return EXIT_FAILURE;
 	}
-	if (ncds_device_init(&sysrepo_id, NULL, 1) != 0) {
-		nc_verb_error("Initiating sysrepo ifc module failed.");
-		ncds_free(sysrepo_ds);
+	if (ncds_device_init(&ifc_id, NULL, 1) != 0) {
+		nc_verb_error("Initiating sysrepo ifc module failed, it will not be available.");
+		ncds_free(ifc_ds);
 		module_disable(server_module, 1);
 		module_disable(netopeer_module, 1);
 		return EXIT_FAILURE;
 	}
+#endif
 
 	server_start = 0;
 	nc_verb_verbose("Netopeer server successfully initialized.");
 
 	listen_loop(listen_init);
 
-	/* remove sysrepo DS */
-	ncds_free(sysrepo_ds);
-	sysrepo_ds = NULL;
+#ifdef IFC_DS
+	/* remove sysrepo ifc ds */
+	ncds_free(ifc_ds);
+	ifc_ds = NULL;
+#endif
+
+	if (sysrepo_fd != -1) {
+		char msg[50];
+		sprintf(msg, "<xml><command>disconnect</command></xml>");
+		if (!srd_sendServer(sysrepo_fd, msg, strlen(msg))) {
+			nc_verb_error("%s: Error in sending msg: %s", __func__, msg);
+		}
+		if (!srd_isServerResponseOK(sysrepo_fd, NULL)) {
+			nc_verb_error("%s: Server response to disconnect is not OK.", __func__);
+		}
+		close(sysrepo_fd);
+		sysrepo_fd = -1;
+	}
 
 	/* unload Netopeer module -> unload all modules */
 	module_disable(server_module, 1);

@@ -67,8 +67,6 @@ SERVER_LIBS = @SERVER_LIBS@
 SERVER_SRCS =  src/server.c \
 	src/cfgnetopeer_transapi.c \
 	src/netconf_server_transapi.c \
-	src/sysrepo_datastore.c \
-	src/sysrepo_transapi.c \
 	@SERVER_TRANSPORT_SRCS@
 SERVER_HDRS = src/server.h \
 	src/cfgnetopeer_transapi.h \
@@ -110,13 +108,19 @@ CFGS =	config/netopeer-cfgnetopeer.yin \
 	config/ietf-netconf-server-schematron.xsl \
 	@SERVER_TLS_CFGS@
 
-SYSREPO_CFGS = ietf-interfaces.yin \
+SYSREPO_IFC_CFGS = ietf-interfaces.yin \
 	ietf-interfaces.yang \
 	iana-if-type.yin \
 	ietf-interfaces-config.rng \
 	ietf-interfaces-gdefs-config.rng \
 	ietf-interfaces-schematron.xsl
 
+SYSREPO_IFC_SRCS = src/ifc_datastore.c \
+	src/ifc_transapi.c
+
+ifeq ("@IFC_DS@", "yes")
+	SYSREPO_IFC_OBJS = $(SYSREPO_IFC_SRCS:%.c=$(OBJDIR)/%.o)
+endif
 
 define PYINSTALL
 cd $(dir $(1)); \
@@ -135,9 +139,9 @@ $(SERVER_MODULES_CONF): $(SERVER_MODULES_CONF:%=%.tmp)
 	$(call EXPAND,$(@:%=%.tmp),$@)
 
 
-$(SERVER): $(SERVER_OBJS) $(LNC_STATIC_OBJS) $(SERVER_MODULES_CONF)
+$(SERVER): $(SERVER_OBJS) $(SYSREPO_IFC_OBJS) $(LNC_STATIC_OBJS) $(SERVER_MODULES_CONF)
 	@rm -f $@;
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(SERVER_OBJS) $(SERVER_LIBS) $(LNC_STATIC_OBJS) $(LIBSRD) -o $@;
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(SERVER_OBJS) $(SYSREPO_IFC_OBJS) $(SERVER_LIBS) $(LNC_STATIC_OBJS) $(LIBSRD) -o $@;
 
 $(OBJDIR)/%.o: %.c
 	@[ -d $(dir $@) ] || \
@@ -168,10 +172,10 @@ install: $(SERVER) $(CFGS)
 	for i in $(CFGS); do \
 		$(INSTALL_DATA_PRIVATE) $$i $(CFGDIR)/cfgnetopeer/; \
 	done
-	$(INSTALL) -d $(CFGDIR)/sysrepo_ifc/
-	for i in $(SYSREPO_CFGS); do \
-		$(INSTALL_DATA_PRIVATE) $$i $(CFGDIR)/sysrepo_ifc/; \
-	done
-	$(INSTALL) -d $(DESTDIR)/$(sysconfdir)/init.d/;
-	$(INSTALL_PROGRAM) -m 755 netopeer.rc $(DESTDIR)/$(sysconfdir)/init.d/
+	if test "@IFC_DS@" = "yes"; then \
+		$(INSTALL) -d $(CFGDIR)/sysrepo_ifc/
+		for i in $(SYSREPO_IFC_CFGS); do \
+			$(INSTALL_DATA_PRIVATE) $$i $(CFGDIR)/sysrepo_ifc/; \
+		done
+	fi
 

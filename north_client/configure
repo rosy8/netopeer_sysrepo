@@ -619,6 +619,8 @@ ac_includes_default="\
 #endif"
 
 ac_subst_vars='LTLIBOBJS
+IFC_DS
+SSHD_CONFIG_DS
 SYSREPOD_PATH
 TLS
 SSH
@@ -721,6 +723,8 @@ enable_debug
 enable_configurator
 enable_ssh
 enable_tls
+enable_sshd_config
+enable_ifc_ds
 with_libnetconf
 with_sysrepod
 with_modules_dir
@@ -1358,6 +1362,10 @@ Optional Features:
                           required)
   --disable-ssh           Compile without SSH transport
   --enable-tls            Compile with TLS transport
+  --disable-sshd-config-ds
+                          Compile without the support for sshd-config
+                          datastore
+  --enable-ifc-ds         Compile with the support for demo ifc datastore
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -2664,6 +2672,40 @@ if test "${enable_tls+set}" = set; then :
 
 else
   TLS=no
+
+fi
+
+
+# --enable-sshd-config-ds
+# Check whether --enable-sshd-config was given.
+if test "${enable_sshd_config+set}" = set; then :
+  enableval=$enable_sshd_config; if test "$enableval" = "no"; then
+		SSHD_CONFIG_DS=no
+	else
+		SSHD_CONFIG_DS=yes
+		CFLAGS="$CFLAGS -DSSHD_CONFIG_DS"
+	fi
+
+else
+  # sshd-config is on by default
+	SSHD_CONFIG_DS=yes
+	CFLAGS="$CFLAGS -DSSHD_CONFIG_DS"
+
+fi
+
+
+# --enable-ifc-ds
+# Check whether --enable-ifc-ds was given.
+if test "${enable_ifc_ds+set}" = set; then :
+  enableval=$enable_ifc_ds; if test "$enableval" = "no"; then
+		IFC_DS=no
+	else
+		IFC_DS=yes
+		CFLAGS="$CFLAGS -DIFC_DS"
+	fi
+
+else
+  IFC_DS=no
 
 fi
 

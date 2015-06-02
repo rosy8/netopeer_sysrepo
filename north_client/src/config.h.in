@@ -51,6 +51,8 @@
 /* the sysrepo ifc datastore */
 #define NP_SYSREPO_IFC_DS "urn:ietf:params:xml:ns:yang:ietf-interfaces"
 
+#define NP_SYSREPO_SERVER_IP "127.0.0.1"
+
 /* every number-of-secs will the last sent or received data timestamp be checked */
 #define CALLHOME_PERIODIC_LINGER_CHECK 5
 

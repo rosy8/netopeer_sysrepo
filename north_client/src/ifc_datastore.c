@@ -14,8 +14,8 @@
 
 #define XML_READ_OPT XML_PARSE_NOBLANKS|XML_PARSE_NSCLEAN
 
-int sysrepo_fd = -1;
-extern struct ncds_ds* sysrepo_ds;
+extern int sysrepo_fd;
+extern struct ncds_ds* ifc_ds;
 
 /* The last valid running for rollback */
 struct rollback_s {
@@ -42,16 +42,13 @@ xmlDocPtr gds_run = NULL;
 xmlDocPtr gds_startup = NULL;
 xmlDocPtr gds_cand = NULL;
 
-char* sysrepo_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error);
-int edit_config(xmlDocPtr repo, xmlDocPtr edit, struct ncds_ds* ds, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE errop, const struct nacm_rpc* nacm, struct nc_err **error);
-int srd_isServerResponseOK(int sockfd, char** OKcontent);
+char* ifc_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error);
 
-int sysrepo_init(void* UNUSED(data)) {
-	const char server_ip[] = "127.0.0.1";
+int ifc_init(void* UNUSED(data)) {
 	char* ds_list, *aux;
 
-	if (srd_connect((char*)server_ip, SRD_DEFAULTSERVERPORT, &sysrepo_fd) != 1) {
-		nc_verb_error("Failed to connect to sysrepo on %s:%d", server_ip, SRD_DEFAULTSERVERPORT);
+	if (sysrepo_fd == -1) {
+		nc_verb_error("Netopeer must be connected to sysrepod");
 		return EXIT_FAILURE;
 	}
 
@@ -84,7 +81,7 @@ int sysrepo_init(void* UNUSED(data)) {
 		return EXIT_FAILURE;
 	}
 
-	aux = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, NULL);
+	aux = ifc_getconfig(NULL, NC_DATASTORE_RUNNING, NULL);
 	if (!aux) {
 		nc_verb_error("Failed to get sysrepo ifc data.");
 		return EXIT_FAILURE;
@@ -106,21 +103,8 @@ int sysrepo_init(void* UNUSED(data)) {
 	return EXIT_SUCCESS;
 }
 
-void sysrepo_free(void* UNUSED(data)) {
+void ifc_free(void* UNUSED(data)) {
 	FILE* startup_file;
-
-    if (sysrepo_fd != -1) {
-		char msg[50];
-		sprintf(msg, "<xml><command>disconnect</command></xml>");
-		if (!srd_sendServer(sysrepo_fd, msg, strlen(msg))) {
-			nc_verb_error("%s: Error in sending msg: %s", __func__, msg);
-		}
-		if (!srd_isServerResponseOK(sysrepo_fd, NULL)) {
-			nc_verb_error("%s: Server response to disconnect is not OK.", __func__);
-		}
-		close(sysrepo_fd);
-		sysrepo_fd = -1;
-	}
 
 	startup_file = fopen(CFG_DIR "/sysrepo_ifc/startup.xml", "w");
 	if (startup_file == NULL) {
@@ -146,14 +130,14 @@ static void store_rollback(const xmlDocPtr doc, NC_DATASTORE type) {
     rollback.type = type;
 }
 
-int sysrepo_changed(void* UNUSED(data)) {
+int ifc_changed(void* UNUSED(data)) {
 	/* always false the function is not needed now, we can implement it later
 	 * for internal purposes, but for now the datastore content is synced
 	 * continuously */
 	return 0;
 }
 
-int sysrepo_lock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
+int ifc_lock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
 	int* locked;
 	char** sid;
 
@@ -194,7 +178,7 @@ int sysrepo_lock(void* UNUSED(data), NC_DATASTORE target, const char* session_id
 	return EXIT_SUCCESS;
 }
 
-int sysrepo_unlock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
+int ifc_unlock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
 	int* locked;
 	char** sid;
 
@@ -244,7 +228,7 @@ int sysrepo_unlock(void* UNUSED(data), NC_DATASTORE target, const char* session_
 	return EXIT_SUCCESS;
 }
 
-char* sysrepo_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error) {
+char* ifc_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error) {
 	xmlChar* config_data = NULL;
 
 	switch (target) {
@@ -279,7 +263,7 @@ char* sysrepo_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err**
 	return (char*)config_data;
 }
 
-int sysrepo_deleteconfig(void *UNUSED(data), NC_DATASTORE target, struct nc_err **error) {
+int ifc_deleteconfig(void *UNUSED(data), NC_DATASTORE target, struct nc_err **error) {
 	switch (target) {
 	case NC_DATASTORE_RUNNING:
 		*error = nc_err_new(NC_ERR_OP_FAILED);
@@ -303,7 +287,7 @@ int sysrepo_deleteconfig(void *UNUSED(data), NC_DATASTORE target, struct nc_err 
 	return EXIT_SUCCESS;
 }
 
-int sysrepo_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE target, const char* config, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE errop, struct nc_err** error) {
+int ifc_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE target, const char* config, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE errop, struct nc_err** error) {
 	int ret = EXIT_FAILURE;
 	char* aux;
 	xmlDocPtr old_doc = NULL, new_doc = NULL;
@@ -324,7 +308,7 @@ int sysrepo_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE targe
 
 	switch (target) {
 	case NC_DATASTORE_RUNNING:
-		aux = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, error);
+		aux = ifc_getconfig(NULL, NC_DATASTORE_RUNNING, error);
 		if (!aux) {
 			nc_verb_error("Failed to get sysrepo ifc data.");
 			*error = nc_err_new(NC_ERR_OP_FAILED);
@@ -348,7 +332,7 @@ int sysrepo_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE targe
 	}
 	store_rollback(xmlCopyDoc(old_doc, 1), target);
 
-	if (edit_config(old_doc, new_doc, sysrepo_ds, defop, errop, (rpc != NULL ? rpc->nacm : NULL), error) != EXIT_SUCCESS) {
+	if (edit_config(old_doc, new_doc, ifc_ds, defop, errop, (rpc != NULL ? rpc->nacm : NULL), ifc_ds, error) != EXIT_SUCCESS) {
 		goto error_cleanup;
 	}
 
@@ -364,14 +348,14 @@ error_cleanup:
 	return ret;
 }
 
-int sysrepo_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE source, char* config, struct nc_err** error) {
+int ifc_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE source, char* config, struct nc_err** error) {
 	char* aux;
 	xmlDocPtr src_doc = NULL;
 	xmlDocPtr dst_doc = NULL;
 
 	switch (source) {
 	case NC_DATASTORE_RUNNING:
-		aux = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, error);
+		aux = ifc_getconfig(NULL, NC_DATASTORE_RUNNING, error);
 		if (!aux) {
 			nc_verb_error("Failed to get sysrepo ifc data.");
 			*error = nc_err_new(NC_ERR_OP_FAILED);
@@ -412,7 +396,7 @@ int sysrepo_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE sou
 
 	switch (target) {
 	case NC_DATASTORE_RUNNING:
-		aux = sysrepo_getconfig(NULL, NC_DATASTORE_RUNNING, error);
+		aux = ifc_getconfig(NULL, NC_DATASTORE_RUNNING, error);
 		if (!aux) {
 			nc_verb_error("Failed to get sysrepo ifc data.");
 			*error = nc_err_new(NC_ERR_OP_FAILED);
@@ -460,7 +444,7 @@ int sysrepo_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE sou
 	return EXIT_SUCCESS;
 }
 
-int sysrepo_rollback(void* UNUSED(data)) {
+int ifc_rollback(void* UNUSED(data)) {
 	xmlChar *data;
 	int size, ret;
 	struct nc_err *e;
@@ -477,7 +461,7 @@ int sysrepo_rollback(void* UNUSED(data)) {
 		data = xmlStrdup(BAD_CAST "");
 	}
 	rollbacking = 1;
-	ret = sysrepo_copyconfig(NULL, rollback.type, NC_DATASTORE_CONFIG, (char*)data, &e);
+	ret = ifc_copyconfig(NULL, rollback.type, NC_DATASTORE_CONFIG, (char*)data, &e);
 	rollbacking = 0;
 
 	if (ret) {
@@ -488,16 +472,16 @@ int sysrepo_rollback(void* UNUSED(data)) {
 	return ret;
 }
 
-struct ncds_custom_funcs sysrepo_funcs = {
-    .init = sysrepo_init,
-    .free = sysrepo_free,
-    .was_changed = sysrepo_changed,
-    .rollback = sysrepo_rollback,
-    .lock = sysrepo_lock,
-    .unlock = sysrepo_unlock,
+struct ncds_custom_funcs ifc_funcs = {
+    .init = ifc_init,
+    .free = ifc_free,
+    .was_changed = ifc_changed,
+    .rollback = ifc_rollback,
+    .lock = ifc_lock,
+    .unlock = ifc_unlock,
     .is_locked = NULL,
-    .getconfig = sysrepo_getconfig,
-    .copyconfig = sysrepo_copyconfig,
-    .deleteconfig = sysrepo_deleteconfig,
-    .editconfig = sysrepo_editconfig
+    .getconfig = ifc_getconfig,
+    .copyconfig = ifc_copyconfig,
+    .deleteconfig = ifc_deleteconfig,
+    .editconfig = ifc_editconfig
 };

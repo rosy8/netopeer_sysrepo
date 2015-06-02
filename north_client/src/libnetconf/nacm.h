@@ -41,6 +41,7 @@
 #define NC_NACM_H_
 
 #include "netconf.h"
+#include "datastore_internal.h"
 
 #define NACM_DENY true
 #define NACM_PERMIT false
@@ -114,7 +115,7 @@ int nacm_check_notification(const nc_ntf* ntf, const struct nc_session* session)
  *         1 for deny the operation<br/>
  *        -1 in case of error
  */
-int nacm_check_data_sysrepo(const xmlNodePtr node, const int access, const struct nacm_rpc* nacm);
+int nacm_check_data_sysrepo(const xmlNodePtr node, const int access, const struct nacm_rpc* nacm, struct ncds_ds* sysrepo_ds);
 
 /**
  * @brief Check given document for read access and remove node that are not
@@ -124,7 +125,7 @@ int nacm_check_data_sysrepo(const xmlNodePtr node, const int access, const struc
  * @param[in] nacm NACM structure from the RPC
  * @return 0 on success, -1 on error
  */
-int nacm_check_data_read(xmlDocPtr doc, const struct nacm_rpc* nacm);
+int nacm_check_data_read_sysrepo(xmlDocPtr doc, const struct nacm_rpc* nacm, struct ncds_ds* sysrepo_ds);
 
 struct rule_list** nacm_rule_lists_dup(struct rule_list** list);
 void nacm_rule_list_free(struct rule_list* rl);

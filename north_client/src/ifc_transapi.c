@@ -22,7 +22,7 @@
  * 0 - data not modified
  * 1 - data have been modified
  */
-int sysrepo_config_modified = 0;
+int ifc_config_modified = 0;
 
 /*
  * Determines the callbacks order.
@@ -30,7 +30,7 @@ int sysrepo_config_modified = 0;
  * TRANSAPI_CLBCKS_LEAF_TO_ROOT (default)
  * TRANSAPI_CLBCKS_ROOT_TO_LEAF
  */
-//const TRANSAPI_CLBCKS_ORDER_TYPE sysrepo_callbacks_order = TRANSAPI_CLBCKS_ROOT_TO_LEAF;
+//const TRANSAPI_CLBCKS_ORDER_TYPE ifc_callbacks_order = TRANSAPI_CLBCKS_ROOT_TO_LEAF;
 
 /* Do not modify or set! This variable is set by libnetconf to announce edit-config's error-option
 Feel free to use it to distinguish module behavior for different error-option values.
@@ -41,7 +41,7 @@ Feel free to use it to distinguish module behavior for different error-option va
  * NC_EDIT_ERROPT_ROLLBACK - After failure, following callbacks are not executed, but previous successful callbacks are
                          executed again with previous configuration data to roll it back.
  */
-NC_EDIT_ERROPT_TYPE sysrepo_erropt = NC_EDIT_ERROPT_NOTSET;
+NC_EDIT_ERROPT_TYPE ifc_erropt = NC_EDIT_ERROPT_NOTSET;
 
 /* the connection to sysrepod */
 extern int sysrepo_fd;
@@ -63,7 +63,7 @@ extern int sysrepo_fd;
 
  * @return EXIT_SUCCESS or EXIT_FAILURE
  */
-int sysrepo_transapi_init(xmlDocPtr* running) {
+int ifc_transapi_init(xmlDocPtr* running) {
 	char* aux = NULL;
 
 	srd_applyXPath(sysrepo_fd, "/*[local-name()='data']/*[local-name()='interfaces']", &aux);
@@ -80,7 +80,7 @@ int sysrepo_transapi_init(xmlDocPtr* running) {
 /**
  * @brief Free all resources allocated on plugin runtime and prepare plugin for removal.
  */
-void sysrepo_transapi_close(void) {
+void ifc_transapi_close(void) {
 }
 
 /**
@@ -91,7 +91,7 @@ void sysrepo_transapi_close(void) {
  * @param[out] err  Double pointer to error structure. Fill error when some occurs.
  * @return State data as libxml2 xmlDocPtr or NULL in case of error.
  */
-xmlDocPtr sysrepo_get_state_data(xmlDocPtr UNUSED(model), xmlDocPtr UNUSED(running), struct nc_err** err) {
+xmlDocPtr ifc_get_state_data(xmlDocPtr UNUSED(model), xmlDocPtr UNUSED(running), struct nc_err** err) {
 	xmlDocPtr doc, state_doc;
 	xmlNodePtr root, nodes;
 	xmlNsPtr ns;
@@ -138,7 +138,7 @@ xmlDocPtr sysrepo_get_state_data(xmlDocPtr UNUSED(model), xmlDocPtr UNUSED(runni
  * Mapping prefixes with namespaces.
  * Do NOT modify this structure!
  */
-struct ns_pair sysrepo_namespace_mapping[] = {
+struct ns_pair ifc_namespace_mapping[] = {
 	{"if", "urn:ietf:params:xml:ns:yang:ietf-interfaces"},
 	{NULL, NULL}
 };
@@ -408,7 +408,7 @@ int callback_if_interfaces_if_interface_if_link_up_down_trap_enable(void** UNUSE
 * It is used by libnetconf library to decide which callbacks will be run.
 * DO NOT alter this structure
 */
-struct transapi_data_callbacks sysrepo_clbks =  {
+struct transapi_data_callbacks ifc_clbks =  {
 	.callbacks_count = 6,
 	.data = NULL,
 	.callbacks = {
@@ -434,23 +434,23 @@ struct transapi_data_callbacks sysrepo_clbks =  {
 * It is used by libnetconf library to decide which callbacks will be run when RPC arrives.
 * DO NOT alter this structure
 */
-struct transapi_rpc_callbacks sysrepo_rpc_clbks = {
+struct transapi_rpc_callbacks ifc_rpc_clbks = {
 	.callbacks_count = 0,
 	.callbacks = {
 	}
 };
 
 /* overall structure providing content of this module to the libnetconf */
-struct transapi sysrepo_transapi = {
+struct transapi ifc_transapi = {
     .version = 6,
-    .init = sysrepo_transapi_init,
-    .close = sysrepo_transapi_close,
-    .get_state = sysrepo_get_state_data,
+    .init = ifc_transapi_init,
+    .close = ifc_transapi_close,
+    .get_state = ifc_get_state_data,
     .clbks_order = TRANSAPI_CLBCKS_ROOT_TO_LEAF,
-    .data_clbks = &sysrepo_clbks,
-    .rpc_clbks = &sysrepo_rpc_clbks,
-    .ns_mapping = sysrepo_namespace_mapping,
-    .config_modified = &sysrepo_config_modified,
-    .erropt = &sysrepo_erropt,
+    .data_clbks = &ifc_clbks,
+    .rpc_clbks = &ifc_rpc_clbks,
+    .ns_mapping = ifc_namespace_mapping,
+    .config_modified = &ifc_config_modified,
+    .erropt = &ifc_erropt,
     .file_clbks = NULL
 };

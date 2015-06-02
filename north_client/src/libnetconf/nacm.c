@@ -60,7 +60,6 @@
 static const char rcsid[] __attribute__((used)) ="$Id: "__FILE__": "RCSID" $";
 
 extern struct ncds_ds* nacm_ds; /* NACM datastore from datastore.c */
-extern struct ncds_ds* sysrepo_ds;
 
 typedef enum {
 	NACM_RULE_NOTSET = 0,
@@ -323,24 +322,24 @@ struct rule_list** nacm_rule_lists_dup(struct rule_list** list)
 	return (new);
 }
 
-static void nacm_check_data_read_recursion(xmlNodePtr subtree, const struct nacm_rpc* nacm)
+static void nacm_check_data_read_recursion(xmlNodePtr subtree, const struct nacm_rpc* nacm, struct ncds_ds* sysrepo_ds)
 {
 	xmlNodePtr node, next;
 
-	if (nacm_check_data_sysrepo(subtree, NACM_ACCESS_READ, nacm) == NACM_DENY) {
+	if (nacm_check_data_sysrepo(subtree, NACM_ACCESS_READ, nacm, sysrepo_ds) == NACM_DENY) {
 		xmlUnlinkNode(subtree);
 		xmlFreeNode(subtree);
 	} else {
 		for (node = subtree->children; node != NULL; node = next) {
 			next = node->next;
 			if (node->type == XML_ELEMENT_NODE) {
-				nacm_check_data_read_recursion(node, nacm);
+				nacm_check_data_read_recursion(node, nacm, sysrepo_ds);
 			}
 		}
 	}
 }
 
-int nacm_check_data_read(xmlDocPtr doc, const struct nacm_rpc* nacm)
+int nacm_check_data_read_sysrepo(xmlDocPtr doc, const struct nacm_rpc* nacm, struct ncds_ds* sysrepo_ds)
 {
 	xmlNodePtr node, next;
 
@@ -355,7 +354,7 @@ int nacm_check_data_read(xmlDocPtr doc, const struct nacm_rpc* nacm)
 	for (node = doc->children; node != NULL; node = next) {
 		next = node->next;
 		if (node->type == XML_ELEMENT_NODE) {
-			nacm_check_data_read_recursion(node, nacm);
+			nacm_check_data_read_recursion(node, nacm, sysrepo_ds);
 		}
 	}
 
@@ -411,7 +410,7 @@ static int compare_node_to_model(const xmlNodePtr node, const xmlNodePtr model_n
 	}
 }
 
-int nacm_check_data_sysrepo(const xmlNodePtr node, const int access, const struct nacm_rpc* nacm)
+int nacm_check_data_sysrepo(const xmlNodePtr node, const int access, const struct nacm_rpc* nacm, struct ncds_ds* sysrepo_ds)
 {
 	xmlXPathObjectPtr defdeny;
 	xmlXPathContextPtr model_ctxt = NULL;
