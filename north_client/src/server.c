@@ -70,17 +70,9 @@ static const char rcsid[] __attribute__((used)) ="$Id: "__FILE__": "RCSID" $";
 extern struct np_options netopeer_options;
 int sysrepo_fd = -1;
 
-#ifdef IFC_DS
-extern struct transapi ifc_transapi;
-extern struct ncds_custom_funcs ifc_funcs;
-struct ncds_ds* ifc_ds;
-#endif
-
-#ifdef SSHD_CONFIG_DS
 extern struct transapi sshdc_transapi;
 extern struct ncds_custom_funcs sshdc_funcs;
 struct ncds_ds* sshdc_ds;
-#endif
 
 #ifndef DISABLE_CALLHOME
 extern pthread_mutex_t callhome_lock;
@@ -692,12 +684,7 @@ int main(int argc, char** argv) {
 	int daemonize = 0, len, ret = EXIT_SUCCESS;
 	int listen_init = 1;
 	struct np_module* netopeer_module = NULL, *server_module = NULL;
-#ifdef IFC_DS
-	ncds_id ifc_id;
-#endif
-#ifdef SSHD_CONFIG_DS
 	ncds_id sshdc_id;
-#endif
 
 	/* initialize message system and set verbose and debug variables */
 	if ((aux_string = getenv(ENVIRONMENT_VERBOSE)) == NULL) {
@@ -816,39 +803,7 @@ restart:
 		goto cleanup;
 	}
 
-#ifdef IFC_DS
-	/* prepare the sysrepo ifc module */
-	ifc_ds = ncds_new_transapi_static(NCDS_TYPE_CUSTOM, CFG_DIR "/sysrepo_ifc/ietf-interfaces.yin", &ifc_transapi);
-	if (ifc_ds == NULL) {
-		nc_verb_error("Creating sysrepo ifc datastore failed.");
-		ret = EXIT_FAILURE;
-		goto cleanup;
-	}
-	if (ncds_add_model(CFG_DIR "/sysrepo_ifc/iana-if-type.yin") != 0) {
-		nc_verb_error("Adding iana-if-type model failed.");
-		ret = EXIT_FAILURE;
-		goto cleanup;
-	}
-	ncds_custom_set_data(ifc_ds, NULL, &ifc_funcs);
-	if ((ifc_id = ncds_init(ifc_ds)) < 0) {
-		nc_verb_error("Initiating sysrepo ifc datastore failed (error code %d).", ifc_id);
-		ret = EXIT_FAILURE;
-		goto cleanup;
-	}
-	if (ncds_consolidate() != 0) {
-		nc_verb_error("Consolidating data models failed.");
-		ret = EXIT_FAILURE;
-		goto cleanup;
-	}
-	if (ncds_device_init(&ifc_id, NULL, 1) != 0) {
-		nc_verb_error("Initiating sysrepo ifc module failed.");
-		ret = EXIT_FAILURE;
-		goto cleanup;
-	}
-#endif
-
-#ifdef SSHD_CONFIG_DS
-	/* prepare the sysrepo ifc module */
+	/* prepare the sysrepo sshd config module */
 	sshdc_ds = ncds_new_transapi_static(NCDS_TYPE_CUSTOM, CFG_DIR "/sysrepo_sshd_config/sshd_config.yin", &sshdc_transapi);
 	if (sshdc_ds == NULL) {
 		nc_verb_error("Creating sysrepo sshd config datastore failed.");
@@ -871,7 +826,6 @@ restart:
 		ret = EXIT_FAILURE;
 		goto cleanup;
 	}
-#endif
 
 	server_start = 0;
 	nc_verb_verbose("Netopeer server successfully initialized.");
@@ -879,17 +833,9 @@ restart:
 	listen_loop(listen_init);
 
 cleanup:
-#ifdef IFC_DS
-	/* remove sysrepo ifc ds */
-	ncds_free(ifc_ds);
-	ifc_ds = NULL;
-#endif
-
-#ifdef SSHD_CONFIG_DS
 	/* remove sysrepo sshd config ds */
 	ncds_free(sshdc_ds);
 	sshdc_ds = NULL;
-#endif
 
 	if (sysrepo_fd != -1) {
 		char msg[50];

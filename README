@@ -2,51 +2,40 @@ netopeer_sysrepo
 ----------------
 
 To run this example NETCONF server and allow
-it to manage ietf-interfaces datastore, follow
-these steps, in order:
+it to manage sshd_config sysrepod datastore,
+you will need to download sysrepod repository
+(https://github.com/sysrepo/sysrepod) and
+follow these steps, in order:
 
 
 Compilation
 ~~~~~~~~~~~
 
-1. north_client
+1. sysrepod repository
 
-$ ./configure --with-sysrepod=<path-to-sysrepod-repository> --enable-ifc-ds --disable-sshd-config-ds
+$ make (libsrd.a must be generated)
+
+2. north_client
+
+$ ./configure --with-sysrepod=<path-to-sysrepod-repository>
 $ make
 # make install
-
-2. south_client
-
-$ make
 
 
 Running
 ~~~~~~~
 
-You need 3 separate terminals:
+You need 2 separate terminals:
 
 1. sysrepod
 
-(start sysrepod with default options - no argument needed)
+$ server/sysrepod param
 
-2. south_client
-
-$ ./sysrepod_ifc_daemon
-
-3. noth_client
+2. noth_client
 
 # netopeer-sysrepo
 
 
-Now you can connect to netopeer-sysrepo, it
-acts as a standard NETCONF server.
-
-
-sshd config
------------
-
-To manage sshd_config sysrepod datastore, you only
-need not to disable its support during compilation.
-Naturally, sysrepod must be set up correctly and
-create that datastore (part of the example "param"
-file in sysrepod repository).
+Now you can connect to netopeer-sysrepo with
+a NETCONF client, it acts as a standard
+NETCONF server.
