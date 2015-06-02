@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="utf-8"?>
+<grammar xmlns:ss="urn:ietf:params:xml:ns:yang:ssh:sshd_config" xmlns="http://relaxng.org/ns/structure/1.0" xmlns:nma="urn:ietf:params:xml:ns:netmod:dsdl-annotations:1" datatypeLibrary="http://www.w3.org/2001/XMLSchema-datatypes"><define name="ietf-inet-types__port-number"><data type="unsignedShort"><param name="minInclusive">0</param><param name="maxInclusive">65535</param></data></define></grammar>

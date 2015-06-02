@@ -723,7 +723,7 @@ enable_debug
 enable_configurator
 enable_ssh
 enable_tls
-enable_sshd_config
+enable_sshd_config_ds
 enable_ifc_ds
 with_libnetconf
 with_sysrepod
@@ -2677,9 +2677,9 @@ fi
 
 
 # --enable-sshd-config-ds
-# Check whether --enable-sshd-config was given.
-if test "${enable_sshd_config+set}" = set; then :
-  enableval=$enable_sshd_config; if test "$enableval" = "no"; then
+# Check whether --enable-sshd-config-ds was given.
+if test "${enable_sshd_config_ds+set}" = set; then :
+  enableval=$enable_sshd_config_ds; if test "$enableval" = "no"; then
 		SSHD_CONFIG_DS=no
 	else
 		SSHD_CONFIG_DS=yes

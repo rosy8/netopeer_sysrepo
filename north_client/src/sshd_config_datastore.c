@@ -15,7 +15,7 @@
 #define XML_READ_OPT XML_PARSE_NOBLANKS|XML_PARSE_NSCLEAN
 
 extern int sysrepo_fd;
-extern struct ncds_ds* ifc_ds;
+extern struct ncds_ds* sshdc_ds;
 
 /* The last valid running for rollback */
 struct rollback_s {
@@ -42,9 +42,9 @@ static xmlDocPtr gds_run = NULL;
 static xmlDocPtr gds_startup = NULL;
 static xmlDocPtr gds_cand = NULL;
 
-char* ifc_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error);
+char* sshdc_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error);
 
-int ifc_init(void* UNUSED(data)) {
+int sshdc_init(void* UNUSED(data)) {
 	char* ds_list, *aux;
 
 	if (sysrepo_fd == -1) {
@@ -52,47 +52,35 @@ int ifc_init(void* UNUSED(data)) {
 		return EXIT_FAILURE;
 	}
 
-	if (!srd_listOpDataStores(sysrepo_fd, &ds_list)) {
-		nc_verb_error("Failed to get sysrepo datastores");
-		return EXIT_FAILURE;
-	}
-
-	if (strstr(ds_list, NP_SYSREPO_IFC_DS "/interfaces-state") == NULL) {
-		nc_verb_error("Sysrepo does not have the ifc operational datastore created");
-		free(ds_list);
-		return EXIT_FAILURE;
-	}
-	free(ds_list);
-
 	if (!srd_listDataStores(sysrepo_fd, &ds_list)) {
 		nc_verb_error("Failed to get sysrepo datastores");
 		return EXIT_FAILURE;
 	}
 
-	if (strstr(ds_list, NP_SYSREPO_IFC_DS "/interfaces") == NULL) {
-		nc_verb_error("Sysrepo does not have the ifc datastore created");
+	if (strstr(ds_list, "sshd_config") == NULL) {
+		nc_verb_error("Sysrepo does not have the sshd conifg datastore created");
 		free(ds_list);
 		return EXIT_FAILURE;
 	}
 	free(ds_list);
 
-	if (!srd_setDataStore(sysrepo_fd, NP_SYSREPO_IFC_DS "/interfaces")) {
+	if (!srd_setDataStore(sysrepo_fd, "sshd_config")) {
 		nc_verb_error("Cannot use sysrepo datastore");
 		return EXIT_FAILURE;
 	}
 
-	aux = ifc_getconfig(NULL, NC_DATASTORE_RUNNING, NULL);
+	aux = sshdc_getconfig(NULL, NC_DATASTORE_RUNNING, NULL);
 	if (!aux) {
-		nc_verb_error("Failed to get sysrepo ifc data.");
+		nc_verb_error("Failed to get sysrepo sshdc data.");
 		return EXIT_FAILURE;
 	}
 	gds_cand = xmlReadMemory(aux, strlen(aux), NULL, NULL, XML_READ_OPT);
 	free(aux);
 
-	if (eaccess(CFG_DIR "/sysrepo_ifc/startup.xml", R_OK) != -1) {
-		gds_startup = xmlReadFile(CFG_DIR "/sysrepo_ifc/startup.xml", NULL, XML_READ_OPT);
+	if (eaccess(CFG_DIR "/sysrepo_sshd_config/startup.xml", R_OK) != -1) {
+		gds_startup = xmlReadFile(CFG_DIR "/sysrepo_sshdc/startup.xml", NULL, XML_READ_OPT);
 		if (gds_startup == NULL) {
-			nc_verb_warning("Could not parse sysrepo ifc startup config.");
+			nc_verb_warning("Could not parse sysrepo sshdc startup config.");
 		}
 	}
 
@@ -103,10 +91,10 @@ int ifc_init(void* UNUSED(data)) {
 	return EXIT_SUCCESS;
 }
 
-void ifc_free(void* UNUSED(data)) {
+void sshdc_free(void* UNUSED(data)) {
 	FILE* startup_file;
 
-	startup_file = fopen(CFG_DIR "/sysrepo_ifc/startup.xml", "w");
+	startup_file = fopen(CFG_DIR "/sysrepo_sshd_config/startup.xml", "w");
 	if (startup_file == NULL) {
 		nc_verb_warning("Failed to store startup config (%s).", strerror(errno));
 	} else {
@@ -133,14 +121,14 @@ static void store_rollback(const xmlDocPtr doc, NC_DATASTORE type) {
     rollback.type = type;
 }
 
-int ifc_changed(void* UNUSED(data)) {
+int sshdc_changed(void* UNUSED(data)) {
 	/* always false the function is not needed now, we can implement it later
 	 * for internal purposes, but for now the datastore content is synced
 	 * continuously */
 	return 0;
 }
 
-int ifc_lock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
+int sshdc_lock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
 	int* locked;
 	char** sid;
 
@@ -175,13 +163,13 @@ int ifc_lock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, st
 		/* remember the lock */
 		*locked = 1;
 		*sid = strdup(session_id);
-		nc_verb_verbose("Sysrepo ifc datastore %d locked by %s.", target, session_id);
+		nc_verb_verbose("Sysrepo sshd config datastore %d locked by %s.", target, session_id);
 	}
 
 	return EXIT_SUCCESS;
 }
 
-int ifc_unlock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
+int sshdc_unlock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, struct nc_err** error) {
 	int* locked;
 	char** sid;
 
@@ -213,7 +201,7 @@ int ifc_unlock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, 
 			*locked = 0;
 			free(*sid);
 			*sid = NULL;
-			nc_verb_verbose("Sysrepo ifc datastore %d unlocked by %s.", target, session_id);
+			nc_verb_verbose("Sysrepo sshd config datastore %d unlocked by %s.", target, session_id);
 		} else {
 			/* locked by another session */
 			*error = nc_err_new(NC_ERR_LOCK_DENIED);
@@ -231,7 +219,7 @@ int ifc_unlock(void* UNUSED(data), NC_DATASTORE target, const char* session_id, 
 	return EXIT_SUCCESS;
 }
 
-char* ifc_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error) {
+char* sshdc_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** error) {
 	xmlChar* config_data = NULL;
 
 	switch (target) {
@@ -240,7 +228,7 @@ char* ifc_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** err
 			xmlDocDumpMemory(gds_run, &config_data, NULL);
 			--internal_getconfig;
 		} else {
-			srd_applyXPath(sysrepo_fd, "/*[local-name()='data']/*[local-name()='interfaces']", (char**)&config_data);
+			srd_applyXPath(sysrepo_fd, "/*[local-name()='config']/*[local-name()='sshd_config_options']", (char**)&config_data);
 		}
 		break;
 	case NC_DATASTORE_STARTUP:
@@ -266,7 +254,7 @@ char* ifc_getconfig(void* UNUSED(data), NC_DATASTORE target, struct nc_err** err
 	return (char*)config_data;
 }
 
-int ifc_deleteconfig(void *UNUSED(data), NC_DATASTORE target, struct nc_err **error) {
+int sshdc_deleteconfig(void *UNUSED(data), NC_DATASTORE target, struct nc_err **error) {
 	switch (target) {
 	case NC_DATASTORE_RUNNING:
 		*error = nc_err_new(NC_ERR_OP_FAILED);
@@ -290,7 +278,7 @@ int ifc_deleteconfig(void *UNUSED(data), NC_DATASTORE target, struct nc_err **er
 	return EXIT_SUCCESS;
 }
 
-int ifc_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE target, const char* config, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE errop, struct nc_err** error) {
+int sshdc_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE target, const char* config, NC_EDIT_DEFOP_TYPE defop, NC_EDIT_ERROPT_TYPE errop, struct nc_err** error) {
 	int ret = EXIT_FAILURE;
 	char* aux;
 	xmlDocPtr old_doc = NULL, new_doc = NULL;
@@ -311,9 +299,9 @@ int ifc_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE target, c
 
 	switch (target) {
 	case NC_DATASTORE_RUNNING:
-		aux = ifc_getconfig(NULL, NC_DATASTORE_RUNNING, error);
+		aux = sshdc_getconfig(NULL, NC_DATASTORE_RUNNING, error);
 		if (!aux) {
-			nc_verb_error("Failed to get sysrepo ifc data.");
+			nc_verb_error("Failed to get sysrepo sshdc data.");
 			*error = nc_err_new(NC_ERR_OP_FAILED);
 			nc_err_set(*error, NC_ERR_PARAM_MSG, "Sysrepo <get-config> failed");
 			goto error_cleanup;
@@ -335,7 +323,7 @@ int ifc_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE target, c
 	}
 	store_rollback(xmlCopyDoc(old_doc, 1), target);
 
-	if (edit_config(old_doc, new_doc, ifc_ds, defop, errop, (rpc != NULL ? rpc->nacm : NULL), ifc_ds, error) != EXIT_SUCCESS) {
+	if (edit_config(old_doc, new_doc, sshdc_ds, defop, errop, (rpc != NULL ? rpc->nacm : NULL), sshdc_ds, error) != EXIT_SUCCESS) {
 		goto error_cleanup;
 	}
 
@@ -351,16 +339,16 @@ error_cleanup:
 	return ret;
 }
 
-int ifc_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE source, char* config, struct nc_err** error) {
+int sshdc_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE source, char* config, struct nc_err** error) {
 	char* aux;
 	xmlDocPtr src_doc = NULL;
 	xmlDocPtr dst_doc = NULL;
 
 	switch (source) {
 	case NC_DATASTORE_RUNNING:
-		aux = ifc_getconfig(NULL, NC_DATASTORE_RUNNING, error);
+		aux = sshdc_getconfig(NULL, NC_DATASTORE_RUNNING, error);
 		if (!aux) {
-			nc_verb_error("Failed to get sysrepo ifc data.");
+			nc_verb_error("Failed to get sysrepo sshdc data.");
 			*error = nc_err_new(NC_ERR_OP_FAILED);
 			nc_err_set(*error, NC_ERR_PARAM_MSG, "Sysrepo <get-config> failed");
 			return EXIT_FAILURE;
@@ -399,9 +387,9 @@ int ifc_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE source,
 
 	switch (target) {
 	case NC_DATASTORE_RUNNING:
-		aux = ifc_getconfig(NULL, NC_DATASTORE_RUNNING, error);
+		aux = sshdc_getconfig(NULL, NC_DATASTORE_RUNNING, error);
 		if (!aux) {
-			nc_verb_error("Failed to get sysrepo ifc data.");
+			nc_verb_error("Failed to get sysrepo sshdc data.");
 			*error = nc_err_new(NC_ERR_OP_FAILED);
 			nc_err_set(*error, NC_ERR_PARAM_MSG, "Sysrepo <get-config> failed");
 			return EXIT_FAILURE;
@@ -447,7 +435,7 @@ int ifc_copyconfig(void* UNUSED(data), NC_DATASTORE target, NC_DATASTORE source,
 	return EXIT_SUCCESS;
 }
 
-int ifc_rollback(void* UNUSED(data)) {
+int sshdc_rollback(void* UNUSED(data)) {
 	xmlChar *data;
 	int size, ret;
 	struct nc_err *e;
@@ -464,7 +452,7 @@ int ifc_rollback(void* UNUSED(data)) {
 		data = xmlStrdup(BAD_CAST "");
 	}
 	rollbacking = 1;
-	ret = ifc_copyconfig(NULL, rollback.type, NC_DATASTORE_CONFIG, (char*)data, &e);
+	ret = sshdc_copyconfig(NULL, rollback.type, NC_DATASTORE_CONFIG, (char*)data, &e);
 	rollbacking = 0;
 
 	if (ret) {
@@ -475,16 +463,16 @@ int ifc_rollback(void* UNUSED(data)) {
 	return ret;
 }
 
-struct ncds_custom_funcs ifc_funcs = {
-    .init = ifc_init,
-    .free = ifc_free,
-    .was_changed = ifc_changed,
-    .rollback = ifc_rollback,
-    .lock = ifc_lock,
-    .unlock = ifc_unlock,
+struct ncds_custom_funcs sshdc_funcs = {
+    .init = sshdc_init,
+    .free = sshdc_free,
+    .was_changed = sshdc_changed,
+    .rollback = sshdc_rollback,
+    .lock = sshdc_lock,
+    .unlock = sshdc_unlock,
     .is_locked = NULL,
-    .getconfig = ifc_getconfig,
-    .copyconfig = ifc_copyconfig,
-    .deleteconfig = ifc_deleteconfig,
-    .editconfig = ifc_editconfig
+    .getconfig = sshdc_getconfig,
+    .copyconfig = sshdc_copyconfig,
+    .deleteconfig = sshdc_deleteconfig,
+    .editconfig = sshdc_editconfig
 };

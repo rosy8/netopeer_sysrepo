@@ -108,18 +108,30 @@ CFGS =	config/netopeer-cfgnetopeer.yin \
 	config/ietf-netconf-server-schematron.xsl \
 	@SERVER_TLS_CFGS@
 
-SYSREPO_IFC_CFGS = ietf-interfaces.yin \
-	ietf-interfaces.yang \
-	iana-if-type.yin \
-	ietf-interfaces-config.rng \
-	ietf-interfaces-gdefs-config.rng \
-	ietf-interfaces-schematron.xsl
+SYSREPO_IFC_CFGS = ifc_ds_config/ietf-interfaces.yin \
+	ifc_ds_config/ietf-interfaces.yang \
+	ifc_ds_config/iana-if-type.yin \
+	ifc_ds_config/ietf-interfaces-config.rng \
+	ifc_ds_config/ietf-interfaces-gdefs-config.rng \
+	ifc_ds_config/ietf-interfaces-schematron.xsl
 
 SYSREPO_IFC_SRCS = src/ifc_datastore.c \
 	src/ifc_transapi.c
 
 ifeq ("@IFC_DS@", "yes")
 	SYSREPO_IFC_OBJS = $(SYSREPO_IFC_SRCS:%.c=$(OBJDIR)/%.o)
+endif
+
+SYSREPO_SSHD_CONFIG_CFGS = sshd_config_ds_config/sshd_config.yin \
+	sshd_config_ds_config/sshd_config-config.rng \
+	sshd_config_ds_config/sshd_config-gdefs-config.rng \
+	sshd_config_ds_config/sshd_config-schematron.xsl
+
+SYSREPO_SSHD_CONFIG_SRCS = src/sshd_config_datastore.c \
+	src/sshd_config_transapi.c
+
+ifeq ("@SSHD_CONFIG_DS@", "yes")
+	SYSREPO_SSHD_CONFIG_OBJS = $(SYSREPO_SSHD_CONFIG_SRCS:%.c=$(OBJDIR)/%.o)
 endif
 
 define PYINSTALL
@@ -139,9 +151,9 @@ $(SERVER_MODULES_CONF): $(SERVER_MODULES_CONF:%=%.tmp)
 	$(call EXPAND,$(@:%=%.tmp),$@)
 
 
-$(SERVER): $(SERVER_OBJS) $(SYSREPO_IFC_OBJS) $(LNC_STATIC_OBJS) $(SERVER_MODULES_CONF)
+$(SERVER): $(SERVER_OBJS) $(SYSREPO_IFC_OBJS) $(SYSREPO_SSHD_CONFIG_OBJS) $(LNC_STATIC_OBJS) $(SERVER_MODULES_CONF)
 	@rm -f $@;
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(SERVER_OBJS) $(SYSREPO_IFC_OBJS) $(SERVER_LIBS) $(LNC_STATIC_OBJS) $(LIBSRD) -o $@;
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(SERVER_OBJS) $(SYSREPO_IFC_OBJS) $(SYSREPO_SSHD_CONFIG_OBJS) $(SERVER_LIBS) $(LNC_STATIC_OBJS) $(LIBSRD) -o $@;
 
 $(OBJDIR)/%.o: %.c
 	@[ -d $(dir $@) ] || \
@@ -176,6 +188,12 @@ install: $(SERVER) $(CFGS)
 		$(INSTALL) -d $(CFGDIR)/sysrepo_ifc/
 		for i in $(SYSREPO_IFC_CFGS); do \
 			$(INSTALL_DATA_PRIVATE) $$i $(CFGDIR)/sysrepo_ifc/; \
+		done
+	fi
+	if test "@SSHD_CONFIG_DS@" = "yes"; then \
+		$(INSTALL) -d $(CFGDIR)/sysrepo_sshd_config/
+		for i in $(SYSREPO_SSHD_CONFIG_CFGS); do \
+			$(INSTALL_DATA_PRIVATE) $$i $(CFGDIR)/sysrepo_sshd_config/; \
 		done
 	fi
 
