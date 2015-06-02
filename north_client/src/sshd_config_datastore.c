@@ -290,7 +290,7 @@ int sshdc_editconfig(void* UNUSED(data), const nc_rpc* rpc, NC_DATASTORE target,
 
 	new_doc = xmlReadMemory(config, strlen(config), NULL, NULL, XML_READ_OPT);
 	root = xmlDocGetRootElement(new_doc);
-	if (!new_doc || (root && !xmlStrEqual(root->name, BAD_CAST "interfaces"))) {
+	if (!new_doc || (root && !xmlStrEqual(root->name, BAD_CAST "sshd_config_options"))) {
 		nc_verb_error("Invalid <edit-config> configuration data.");
 		*error = nc_err_new(NC_ERR_BAD_ELEM);
 		nc_err_set(*error, NC_ERR_PARAM_INFO_BADELEM, "config");
