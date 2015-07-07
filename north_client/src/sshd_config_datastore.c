@@ -78,7 +78,7 @@ int sshdc_init(void* UNUSED(data)) {
 	free(aux);
 
 	if (eaccess(CFG_DIR "/sysrepo_sshd_config/startup.xml", R_OK) != -1) {
-		gds_startup = xmlReadFile(CFG_DIR "/sysrepo_sshdc/startup.xml", NULL, XML_READ_OPT);
+		gds_startup = xmlReadFile(CFG_DIR "/sysrepo_sshd_config/startup.xml", NULL, XML_READ_OPT);
 		if (gds_startup == NULL) {
 			nc_verb_warning("Could not parse sysrepo sshdc startup config.");
 		}
